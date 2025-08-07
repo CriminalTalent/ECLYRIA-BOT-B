@@ -3,66 +3,38 @@
 require_relative '../core/sheet_manager'
 
 class PotionCommand
-  def initialize(masto_client, sheet)
-    @client = masto_client
+  def initialize(masto, sheet)
+    @masto = masto
     @sheet = sheet
   end
 
   def handle(status)
-    content = status[:content]
     user_id = status[:account][:acct]
+    inventory = SheetManager.get_stat(user_id, "아이템")
+    return unless inventory
 
-    return unless content.include?("물약사용")
-
-    items = SheetManager.get_stat(user_id, "아이템")
-    hp = SheetManager.get_stat(user_id, "체력")
-
-    potions = extract_potion_count(items)
-    if potions == 0
-      @client.reply("@#{user_id} 포션이 없습니다.")
+    potion_line = inventory.split(',').find { |i| i.include?("포션") }
+    unless potion_line
+      @masto.say("@#{user_id}는 포션을 가지고 있지 않습니다.")
       return
     end
 
-    heal = [5, 10, 15, 20].sample
-    new_hp = hp + heal
-
-    # 체력 업데이트
-    SheetManager.set_stat(user_id, "체력", new_hp)
-
-    # 포션 1개 차감
-    new_items = decrement_potion(items)
-    SheetManager.set_stat(user_id, "아이템", new_items)
-
-    @client.create_status("@#{user_id}의 체력이 #{heal} 회복되었습니다. 현재 체력 #{new_hp}")
-  end
-
-  private
-
-  def extract_potion_count(items)
-    return 0 unless items
-
-    items.split(',').map(&:strip).each do |entry|
-      name, count = entry.split(':')
-      return count.to_i if name == "포션"
+    count = potion_line.match(/포션(\d+)/)&. &.to_i || 0
+    if count <= 0
+      @masto.say("@#{user_id}는 포션이 없습니다.")
+      return
     end
 
-    0
-  end
+    # 랜덤 회복량
+    amount = [5, 10, 15, 20].sample
+    hp = SheetManager.get_stat(user_id, "체력").to_i
+    new_hp = [hp + amount, 100].min
+    SheetManager.set_stat(user_id, "체력", new_hp)
 
-  def decrement_potion(items)
-    return items unless items
+    # 포션 차감
+    new_inventory = inventory.gsub(/포션:\d+/) { "포션:#{count - 1}" }
+    SheetManager.set_stat(user_id, "아이템", new_inventory)
 
-    new_items = items.split(',').map(&:strip).map do |entry|
-      name, count = entry.split(':')
-      if name == "포션"
-        new_count = count.to_i - 1
-        new_count > 0 ? "포션:#{new_count}" : nil
-      else
-        entry
-      end
-    end.compact
-
-    new_items.join(', ')
+    @masto.say("@#{user_id}의 체력이 #{amount} 회복되었습니다. 현재 체력 #{new_hp}")
   end
 end
-
