@@ -1,5 +1,4 @@
 # commands/battle_command.rb
-
 require_relative '../core/battle_engine'
 require_relative '../core/sheet_manager'
 require_relative '../core/battle_state'
@@ -11,36 +10,29 @@ class BattleCommand
   end
 
   def handle(status)
-    content = status[:content]
-    user_id = status[:account][:acct]
-    display_name = status[:account][:display_name] || user_id
-    in_reply_to_id = status[:id]
+    content = status.content
+    user_id = status.account.acct
+    display_name = status.account.display_name || user_id
+    in_reply_to_id = status.id
 
     case content
     when /^전투개시\s+@(\w+)/
       opponent = "@#{$1}"
       start_battle(user_id, opponent, in_reply_to_id)
-
     when /^DM전투개시\s+(.+)vs(.+)/
       team_a = $1.strip.split(/\s+/)
       team_b = $2.strip.split(/\s+/)
       start_dm_battle(team_a, team_b, in_reply_to_id)
-
     when /공격/
       BattleEngine.attack(user_id)
-
     when /방어/
       BattleEngine.defend(user_id)
-
     when /반격/
       BattleEngine.counter(user_id)
-
     when /도주/
       BattleEngine.escape(user_id)
-
     when /물약사용/
       BattleEngine.use_potion(user_id)
-
     else
       return
     end
