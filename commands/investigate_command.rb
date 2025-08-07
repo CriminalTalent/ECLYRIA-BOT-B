@@ -68,10 +68,19 @@ class InvestigateCommand
   def find_sheet_data(target, kind)
     sheet = @sheet.worksheet("조사")
     headers = sheet.rows[0]
+
     sheet.rows[1..].each do |row|
       row_hash = Hash[headers.zip(row)]
-      return row_hash if row_hash["대상"] == target && row_hash["종류"] == kind
+      next unless row_hash["대상"] == target
+
+      # 조사 종류가 "조사"일 경우 "DM조사"도 허용
+      if kind == "조사"
+        return row_hash if ["조사", "DM조사"].include?(row_hash["종류"])
+      else
+        return row_hash if row_hash["종류"] == kind
+      end
     end
+
     nil
   end
 end
