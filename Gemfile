@@ -1,10 +1,7 @@
-source "https://rubygems.org"
+source 'https://rubygems.org'
 
-ruby ">= 2.7.0"
+ruby '3.0.2'
 
-gem "mastodon-api", require: "mastodon"
-gem "google_drive"
-gem "dotenv"
-
-gem "rspec", group: [:development, :test]
-gem "pry", group: [:development]
+gem 'mastodon-api', require: 'mastodon'
+gem 'google_drive'
+gem 'dotenv'
