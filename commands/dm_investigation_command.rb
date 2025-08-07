@@ -21,6 +21,6 @@ class DMInvestigationCommand
     today = Date.today.to_s
     SheetManager.set_stat(user, "마지막조사일", today)
 
-    @masto.say("@#{user} (DM 입력 조사결과): #{result}")
+    @masto.dm(user, result)
   end
 end
