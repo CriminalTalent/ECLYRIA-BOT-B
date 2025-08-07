@@ -1,5 +1,4 @@
 # commands/investigate_command.rb
-
 require 'date'
 require_relative '../core/sheet_manager'
 
@@ -10,9 +9,9 @@ class InvestigateCommand
   end
 
   def handle(status)
-    content = status[:content].gsub(/<[^>]+>/, '')
-    user_id = status[:account][:acct]
-    in_reply_to_id = status[:id]
+    content = status.content.gsub(/<[^>]+>/, '')
+    user_id = status.account.acct
+    in_reply_to_id = status.id
 
     kind = detect_kind(content)
     target = detect_target(content)
@@ -44,7 +43,6 @@ class InvestigateCommand
     end
 
     SheetManager.set_stat(user_id, "마지막조사일", today)
-
     @masto.say("@#{user_id}의 #{kind} 결과: #{result_text} (주사위: #{dice}, 보정: #{stat}, 총합: #{result_value}/#{difficulty})")
   end
 
@@ -68,11 +66,9 @@ class InvestigateCommand
   def find_sheet_data(target, kind)
     sheet = @sheet.worksheet("조사")
     headers = sheet.rows[0]
-
     sheet.rows[1..].each do |row|
       row_hash = Hash[headers.zip(row)]
       next unless row_hash["대상"] == target
-
       # 조사 종류가 "조사"일 경우 "DM조사"도 허용
       if kind == "조사"
         return row_hash if ["조사", "DM조사"].include?(row_hash["종류"])
@@ -80,7 +76,6 @@ class InvestigateCommand
         return row_hash if row_hash["종류"] == kind
       end
     end
-
     nil
   end
 end
