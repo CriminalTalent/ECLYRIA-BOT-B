@@ -1,5 +1,4 @@
 # commands/potion_command.rb
-
 require_relative '../core/sheet_manager'
 
 class PotionCommand
@@ -9,7 +8,7 @@ class PotionCommand
   end
 
   def handle(status)
-    user_id = status[:account][:acct]
+    user_id = status.account.acct
     inventory = SheetManager.get_stat(user_id, "아이템")
     return unless inventory
 
@@ -19,7 +18,7 @@ class PotionCommand
       return
     end
 
-    count = potion_line.match(/포션(\d+)/)&. &.to_i || 0
+    count = potion_line.match(/포션(\d+)/)&.[](1)&.to_i || 0
     if count <= 0
       @masto.say("@#{user_id}는 포션이 없습니다.")
       return
@@ -29,6 +28,7 @@ class PotionCommand
     amount = [5, 10, 15, 20].sample
     hp = SheetManager.get_stat(user_id, "체력").to_i
     new_hp = [hp + amount, 100].min
+
     SheetManager.set_stat(user_id, "체력", new_hp)
 
     # 포션 차감
