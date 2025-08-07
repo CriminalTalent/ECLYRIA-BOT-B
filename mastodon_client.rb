@@ -1,8 +1,5 @@
 # mastodon_client.rb
 
-require 'mastodon'
-require 'dotenv/load'
-
 class MastodonClient
   def initialize
     @client = Mastodon::REST::Client.new(
@@ -20,5 +17,11 @@ class MastodonClient
     @client.create_status("@#{user_id} #{text}", in_reply_to_id: in_reply_to_id)
   end
 
+  def dm(user_id, text)
+    @client.create_status("@#{user_id} #{text}", visibility: "direct")
+  end
+
   def me
-    @me.
+    @me.acct
+  end
+end
