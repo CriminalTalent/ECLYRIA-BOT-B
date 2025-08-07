@@ -19,7 +19,7 @@ module BattleEngine
     sorted = stats.sort_by { |_, roll| -roll }
 
     BattleState.set_turn(sorted[0][0])
-    msg = "자동봇 : 선공 #{sorted[0][0]}, 후공 #{sorted[1][0]} 전투를 시작합니다."
+    msg = "선공 #{sorted[0][0]}, 후공 #{sorted[1][0]} 전투를 시작합니다."
     BattleState.say(msg)
   end
 
@@ -29,7 +29,7 @@ module BattleEngine
 
     first_team = a_total >= b_total ? team_a : team_b
     BattleState.set_turn(first_team[0]) # 팀의 첫 번째 플레이어
-    msg = "자동봇 : 선공 팀 (#{first_team.join(", ")}) 전투를 시작합니다."
+    msg = "선공 팀 (#{first_team.join(", ")}) 전투를 시작합니다."
     BattleState.say(msg)
   end
 
@@ -43,7 +43,7 @@ module BattleEngine
     SheetManager.set_stat(defender, "체력", new_hp)
 
     msg = "#{user}의 공격! #{defender}에게 #{dmg} 피해를 입혔습니다.\n"
-    msg += "자동봇 : #{user}의 공격 : #{atk}, #{defender}의 방어 : #{def_val}\n"
+    msg += "#{user}의 공격 : #{atk}, #{defender}의 방어 #{def_val}\n"
     msg += "남은 체력 - #{user}: #{SheetManager.get_stat(user, '체력')} / #{defender}: #{new_hp}"
 
     BattleState.say(msg)
@@ -68,7 +68,7 @@ module BattleEngine
     SheetManager.set_stat(attacker, "체력", new_hp)
 
     msg = "#{user}의 반격! #{attacker}에게 #{dmg} 피해를 입혔습니다.\n"
-    msg += "자동봇 : #{user}의 반격 : #{counter}, #{attacker}의 방어 : #{def_val}\n"
+    msg += "#{user}의 반격 #{counter}, #{attacker}의 방어 #{def_val}\n"
     msg += "남은 체력 - #{attacker}: #{new_hp} / #{user}: #{SheetManager.get_stat(user, '체력')}"
 
     BattleState.say(msg)
@@ -99,7 +99,7 @@ module BattleEngine
     amount = [5, 10, 15, 20].sample
     cur_hp = SheetManager.get_stat(user, "체력")
     SheetManager.set_stat(user, "체력", cur_hp + amount)
-    msg = "#{user}의 체력이 #{amount} 회복되었습니다. 현재 체력: #{cur_hp + amount}"
+    msg = "#{user}의 체력이 #{amount} 회복되었습니다. 현재 체력 #{cur_hp + amount}"
     BattleState.say(msg)
     BattleState.next_turn
   end
