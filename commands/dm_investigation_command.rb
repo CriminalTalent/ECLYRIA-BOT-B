@@ -1,35 +1,26 @@
 # commands/dm_investigation_command.rb
 
+require 'date'
+require_relative '../core/sheet_manager'
+
 class DMInvestigationCommand
-  def initialize(masto_client)
-    @client = masto_client
+  def initialize(masto)
+    @masto = masto
   end
 
   def handle(status)
-    content = status[:content]
-    author_id = status[:account][:acct]
+    content = status[:content].gsub(/<[^>]+>/, '')
+    return unless content.start_with?("DM조사결과")
 
-    # DM만 실행 가능하도록 제한 (선택사항)
-    return unless is_dm?(author_id)
+    match = content.match(/DM조사결과\s+@(\w+)\s+(.+)/)
+    return unless match
 
-    if content =~ /^DM조사결과\s+@(\w+)\s+(.+)/
-      target_id = "@#{$1}"
-      result = $2.strip
+    user = match[1]
+    result = match[2]
 
-      post_dm_result(target_id, result)
-    end
-  end
+    today = Date.today.to_s
+    SheetManager.set_stat(user, "마지막조사일", today)
 
-  private
-
-  def is_dm?(user_id)
-    # 🟢 이 부분은 원하는 DM 계정으로 제한할 수도 있습니다
-    ["dm", "game_master", "admin"].include?(user_id)
-  end
-
-  def post_dm_result(user_id, result)
-    message = "@#{user_id} 조사 결과입니다:\n\n🧾 #{result}"
-    @client.create_status(message)
+    @masto.say("@#{user} (DM 입력 조사결과): #{result}")
   end
 end
-
