@@ -1,102 +1,77 @@
 # commands/investigate_command.rb
 
+require 'date'
 require_relative '../core/sheet_manager'
 
 class InvestigateCommand
-  def initialize(masto_client, sheet)
-    @client = masto_client
+  def initialize(masto, sheet)
+    @masto = masto
     @sheet = sheet
   end
 
   def handle(status)
-    content = status[:content]
+    content = status[:content].gsub(/<[^>]+>/, '')
     user_id = status[:account][:acct]
+    in_reply_to_id = status[:id]
 
-    case content
-    when /^조사\s+(.+)/
-      handle_investigation(user_id, $1.strip, "조사")
+    kind = detect_kind(content)
+    target = detect_target(content)
+    return unless kind && target
 
-    when /^정밀조사\s+(.+)/
-      handle_investigation(user_id, $1.strip, "정밀조사")
+    today = Date.today.to_s
+    last_date = SheetManager.get_stat(user_id, "마지막조사일")
 
-    when /^감지\s+(.+)/
-      handle_investigation(user_id, $1.strip, "감지")
-
-    when /^훔쳐보기\s+@(\w+)/
-      handle_peek(user_id, "@#{$1}")
-
-    else
-      # 무시
+    if last_date == today
+      @masto.reply(user_id, "오늘은 이미 조사를 진행하셨습니다.", in_reply_to_id: in_reply_to_id)
       return
     end
+
+    row = find_sheet_data(target, kind)
+    unless row
+      @masto.reply(user_id, "해당 대상에 대한 #{kind} 정보가 없습니다.", in_reply_to_id: in_reply_to_id)
+      return
+    end
+
+    difficulty = row["난이도"].to_i
+    stat = SheetManager.get_stat(user_id, "행운").to_i
+    dice = rand(1..20)
+    result_value = dice + stat
+
+    if result_value >= difficulty
+      result_text = row["성공결과"]
+    else
+      result_text = row["실패결과"]
+    end
+
+    SheetManager.set_stat(user_id, "마지막조사일", today)
+
+    @masto.say("@#{user_id}의 #{kind} 결과: #{result_text} (주사위: #{dice}, 보정: #{stat}, 총합: #{result_value}/#{difficulty})")
   end
 
   private
 
-  def handle_investigation(user_id, target, kind)
-    return unless can_investigate?(user_id)
-
-    data = find_sheet_data(target, kind)
-    if data.nil?
-      @client.reply("@#{user_id} 조사할 수 없는 대상입니다.")
-      return
+  def detect_kind(text)
+    case text
+    when /정밀조사/ then "정밀조사"
+    when /감지/ then "감지"
+    when /훔쳐보기/ then "훔쳐보기"
+    when /조사/ then "조사"
+    else nil
     end
-
-    luck = SheetManager.get_stat(user_id, "행운")
-    roll = luck + rand(1..20)
-    success = roll >= data[:difficulty]
-
-    result = if success
-               data[:success].sample
-             else
-               data[:failure].sample
-             end
-
-    SheetManager.set_stat(user_id, "마지막조사일", Date.today.to_s)
-
-    message = "@#{user_id}의 #{kind} 결과 \n\n#{result}"
-    @client.create_status(message)
   end
 
-  def can_investigate?(user_id)
-    today = Date.today.to_s
-    last = SheetManager.get_stat(user_id, "마지막조사일")
-
-    if last == today
-      @client.reply("@#{user_id} 오늘은 이미 조사를 진행했습니다.")
-      return false
-    end
-
-    true
+  def detect_target(text)
+    match = text.match(/\[(.+?)\]/)
+    match && match[1]
   end
 
   def find_sheet_data(target, kind)
-    rows = @sheet.worksheet("조사").rows
-    headers = rows[0]
-    rows[1..].each do |row|
-      row_data = Hash[headers.zip(row)]
-      next unless row_data["대상"] == target && row_data["종류"] == kind
-
-      return {
-        difficulty: row_data["난이도"].to_i,
-        success: [row_data["성공결과1"], row_data["성공결과2"]].compact,
-        failure: [row_data["실패결과1"], row_data["실패결과2"]].compact
-      }
+    sheet = @sheet.worksheet("조사")
+    headers = sheet.rows[0]
+    sheet.rows[1..].each do |row|
+      row_hash = Hash[headers.zip(row)]
+      return row_hash if row_hash["대상"] == target && row_hash["종류"] == kind
     end
-
     nil
-  end
-
-  def handle_peek(user_id, target_id)
-    luck = SheetManager.get_stat(user_id, "행운") + rand(1..20)
-    detect = rand(1..20)
-
-    msg = if luck > detect
-            "@#{user_id}는 @#{target_id}를 몰래 관찰하는 데 성공했습니다. 무언가를 알아냈습니다."
-          else
-            "@#{user_id}의 훔쳐보기 실패. 들켰습니다."
-          end
-
-    @client.create_status(msg)
   end
 end
