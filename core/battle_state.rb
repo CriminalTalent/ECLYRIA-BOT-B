@@ -14,6 +14,7 @@ module BattleState
   }
 
   @@mastodon_client = nil
+  @@turn_timer = nil  # 턴 타이머
 
   def set_mastodon_client(client)
     @@mastodon_client = client
@@ -29,17 +30,54 @@ module BattleState
   end
 
   def set_turn(user_id)
+    # 기존 타이머 취소
+    cancel_turn_timer
+    
     @@state[:turn] = user_id
+    
+    # 허수아비가 아닌 경우에만 타이머 설정
+    unless user_id.include?("허수아비")
+      start_turn_timer(user_id)
+    end
+  end
+
+  def start_turn_timer(user_id)
+    @@turn_timer = Thread.new do
+      sleep(300) # 5분 = 300초
+      
+      # 5분 후에도 여전히 같은 사용자 턴이면 타임아웃
+      if @@state[:turn] == user_id && !@@state[:players].empty?
+        say("#{user_id}님이 5분간 응답이 없어 턴이 자동으로 넘어갑니다.")
+        next_turn
+      end
+    end
+  end
+
+  def cancel_turn_timer
+    if @@turn_timer && @@turn_timer.alive?
+      @@turn_timer.kill
+      @@turn_timer = nil
+    end
   end
 
   def next_turn
     return unless @@state[:turn] && !@@state[:players].empty?
     
+    # 현재 타이머 취소
+    cancel_turn_timer
+    
     current_index = @@state[:players].index(@@state[:turn])
     return unless current_index
     
     next_index = (current_index + 1) % @@state[:players].length
-    @@state[:turn] = @@state[:players][next_index]
+    next_player = @@state[:players][next_index]
+    
+    @@state[:turn] = next_player
+    
+    # 새로운 턴 플레이어에 대해 타이머 설정
+    unless next_player.include?("허수아비")
+      start_turn_timer(next_player)
+    end
   end
 
   def get_turn
@@ -91,6 +129,9 @@ module BattleState
   end
 
   def end
+    # 타이머 취소
+    cancel_turn_timer
+    
     @@state = {
       players: [],
       team_a: [],
