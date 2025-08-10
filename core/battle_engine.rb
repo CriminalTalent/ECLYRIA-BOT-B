@@ -80,6 +80,9 @@ module BattleEngine
       return
     end
 
+    # 사용자가 행동했으므로 타이머 취소
+    BattleState.cancel_turn_timer
+
     defender = BattleState.get_opponent(user)
     
     atk_stat = get_stat_value(user, "공격력")
@@ -134,6 +137,9 @@ module BattleEngine
       return
     end
 
+    # 사용자가 행동했으므로 타이머 취소
+    BattleState.cancel_turn_timer
+
     msg = "#{user}이(가) 방어 자세를 취합니다. 다음 턴으로 넘어갑니다."
     BattleState.say(msg)
     BattleState.next_turn
@@ -150,6 +156,9 @@ module BattleEngine
       BattleState.say("#{user}님의 턴이 아닙니다.")
       return
     end
+
+    # 사용자가 행동했으므로 타이머 취소
+    BattleState.cancel_turn_timer
 
     attacker = BattleState.get_opponent(user)
     
@@ -205,6 +214,9 @@ module BattleEngine
       return
     end
 
+    # 사용자가 행동했으므로 타이머 취소
+    BattleState.cancel_turn_timer
+
     opp = BattleState.get_opponent(user)
     
     luck_stat = @@sheet_manager.get_stat(user, "행운")
@@ -239,6 +251,9 @@ module BattleEngine
       BattleState.say("#{user}님의 턴이 아닙니다.")
       return
     end
+
+    # 사용자가 행동했으므로 타이머 취소
+    BattleState.cancel_turn_timer
 
     amount = [5, 10, 15, 20].sample
     
