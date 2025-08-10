@@ -8,7 +8,9 @@ module BattleState
     players: [],      # 전체 참가자 ID 목록
     team_a: [],       # 팀 A
     team_b: [],       # 팀 B
-    turn: nil         # 현재 턴인 사용자 ID
+    turn: nil,        # 현재 턴인 사용자 ID
+    scarecrow: false, # 허수아비 전투 여부
+    difficulty: nil   # 허수아비 난이도
   }
 
   @@mastodon_client = nil
@@ -17,11 +19,13 @@ module BattleState
     @@mastodon_client = client
   end
 
-  def set(players:, team_a: nil, team_b: nil, turn: nil)
+  def set(players:, team_a: nil, team_b: nil, turn: nil, scarecrow: false, difficulty: nil)
     @@state[:players] = players
     @@state[:team_a] = team_a || []
     @@state[:team_b] = team_b || []
     @@state[:turn] = turn
+    @@state[:scarecrow] = scarecrow
+    @@state[:difficulty] = difficulty
   end
 
   def set_turn(user_id)
@@ -47,8 +51,20 @@ module BattleState
   end
 
   def get_opponent(user_id)
-    others = @@state[:players] - [user_id]
-    others.first # 단순 1:1 전투 기준
+    # 팀 전투인 경우
+    if !@@state[:team_a].empty? && !@@state[:team_b].empty?
+      if @@state[:team_a].include?(user_id)
+        # A팀 소속이면 B팀에서 체력이 남은 첫 번째 플레이어 반환
+        return @@state[:team_b].first
+      else
+        # B팀 소속이면 A팀에서 체력이 남은 첫 번째 플레이어 반환
+        return @@state[:team_a].first
+      end
+    else
+      # 일반 1:1 전투 (허수아비 포함)
+      others = @@state[:players] - [user_id]
+      others.first
+    end
   end
 
   def in_battle?(user_id)
@@ -63,10 +79,13 @@ module BattleState
       puts "[BATTLE] #{message}"
     end
 
-    # 2. 전투 참가자들에게 DM 발송
+    # 2. 전투 참가자들에게 DM 발송 (허수아비 제외)
     if @@mastodon_client && !@@state[:players].empty?
       @@state[:players].each do |player|
-        @@mastodon_client.dm(player, message)
+        # 허수아비는 DM 제외
+        unless player.include?("허수아비")
+          @@mastodon_client.dm(player, message)
+        end
       end
     end
   end
@@ -76,7 +95,9 @@ module BattleState
       players: [],
       team_a: [],
       team_b: [],
-      turn: nil
+      turn: nil,
+      scarecrow: false,
+      difficulty: nil
     }
   end
 
