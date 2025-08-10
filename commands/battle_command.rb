@@ -20,13 +20,14 @@ class BattleCommand
     in_reply_to_id = status.id
 
     case content
-    when /^전투개시\s+@?(\w+)/
-      opponent = $1
-      start_battle(sender, opponent, in_reply_to_id)
-    when /^DM전투개시\s+(.+)vs(.+)/
-      team_a = $1.strip.split(/\s+/)
-      team_b = $2.strip.split(/\s+/)
-      start_dm_battle(team_a, team_b, in_reply_to_id)
+    when /\[전투개시\/@?(\w+)\/@?(\w+)\/@?(\w+)\]/
+      teammate = $1
+      opponent1 = $2  
+      opponent2 = $3
+      start_team_battle(sender, teammate, opponent1, opponent2, in_reply_to_id)
+    when /\[허수아비\s+(상|중|하)\]/
+      difficulty = $1
+      start_scarecrow_battle(sender, difficulty, in_reply_to_id)
     when /공격/
       BattleEngine.attack(sender)
     when /방어/
@@ -44,25 +45,29 @@ class BattleCommand
 
   private
 
-  def start_battle(user_id, opponent_id, reply_id)
-    if BattleState.in_battle?(user_id) || BattleState.in_battle?(opponent_id)
-      @mastodon_client.reply(user_id, "당신 혹은 #{opponent_id}는 이미 전투 중입니다.", in_reply_to_id: reply_id)
-      return
-    end
-
-    players = [user_id, opponent_id]
-    BattleEngine.init_1v1(players)
-    BattleEngine.roll_initiative(players)
-  end
-
-  def start_dm_battle(team_a, team_b, reply_id)
-    players = team_a + team_b
-    if players.any? { |p| BattleState.in_battle?(p) }
-      @mastodon_client.say("참가자 중 이미 전투 중인 유저가 있습니다.")
+  def start_team_battle(user_id, teammate, opponent1, opponent2, reply_id)
+    team_a = [user_id, teammate]
+    team_b = [opponent1, opponent2]
+    all_players = team_a + team_b
+    
+    if all_players.any? { |p| BattleState.in_battle?(p) }
+      @mastodon_client.reply(user_id, "참가자 중 이미 전투 중인 유저가 있습니다.", in_reply_to_id: reply_id)
       return
     end
 
     BattleEngine.init_team_battle(team_a, team_b)
     BattleEngine.roll_team_initiative(team_a, team_b)
+  end
+
+  def start_scarecrow_battle(user_id, difficulty, reply_id)
+    if BattleState.in_battle?(user_id)
+      @mastodon_client.reply(user_id, "이미 전투 중입니다.", in_reply_to_id: reply_id)
+      return
+    end
+
+    scarecrow_id = "허수아비_#{difficulty}"
+    players = [user_id, scarecrow_id]
+    BattleEngine.init_scarecrow_battle(players, difficulty)
+    BattleEngine.roll_initiative(players)
   end
 end
