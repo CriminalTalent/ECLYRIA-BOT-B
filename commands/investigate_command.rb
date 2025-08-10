@@ -1,38 +1,43 @@
 # commands/investigate_command.rb
 require 'date'
-require_relative '../core/sheet_manager'
 
 class InvestigateCommand
-  def initialize(masto, sheet)
-    @masto = masto
-    @sheet = sheet
+  def initialize(mastodon_client, sheet_manager)
+    @mastodon_client = mastodon_client
+    @sheet_manager = sheet_manager
   end
 
   def handle(status)
-    content = status.content.gsub(/<[^>]+>/, '')
-    user_id = status.account.acct
+    content = status.content.gsub(/<[^>]+>/, '').strip
+    sender_full = status.account.acct
+    sender = sender_full.split('@').first
     in_reply_to_id = status.id
 
     kind = detect_kind(content)
     target = detect_target(content)
-    return unless kind && target
-
-    today = Date.today.to_s
-    last_date = SheetManager.get_stat(user_id, "마지막조사일")
-
-    if last_date == today
-      @masto.reply(user_id, "오늘은 이미 조사를 진행하셨습니다.", in_reply_to_id: in_reply_to_id)
+    
+    unless kind && target
+      puts "[조사] 명령어 파싱 실패: kind=#{kind}, target=#{target}"
       return
     end
 
-    row = find_sheet_data(target, kind)
+    today = Date.today.to_s
+    last_date = @sheet_manager.get_stat(sender, "마지막조사일")
+
+    if last_date == today
+      @mastodon_client.reply(sender, "오늘은 이미 조사를 진행하셨습니다.", in_reply_to_id: in_reply_to_id)
+      return
+    end
+
+    row = @sheet_manager.find_investigation_data(target, kind)
     unless row
-      @masto.reply(user_id, "해당 대상에 대한 #{kind} 정보가 없습니다.", in_reply_to_id: in_reply_to_id)
+      @mastodon_client.reply(sender, "해당 대상에 대한 #{kind} 정보가 없습니다.", in_reply_to_id: in_reply_to_id)
       return
     end
 
     difficulty = row["난이도"].to_i
-    stat = SheetManager.get_stat(user_id, "행운").to_i
+    luck_stat = @sheet_manager.get_stat(sender, "행운")
+    stat = luck_stat ? luck_stat.to_i : 0
     dice = rand(1..20)
     result_value = dice + stat
 
@@ -42,8 +47,10 @@ class InvestigateCommand
       result_text = row["실패결과"]
     end
 
-    SheetManager.set_stat(user_id, "마지막조사일", today)
-    @masto.say("@#{user_id}의 #{kind} 결과: #{result_text} (주사위: #{dice}, 보정: #{stat}, 총합: #{result_value}/#{difficulty})")
+    @sheet_manager.set_stat(sender, "마지막조사일", today)
+    
+    message = "#{sender}의 #{kind} 결과: #{result_text} (주사위: #{dice}, 보정: #{stat}, 총합: #{result_value}/#{difficulty})"
+    @mastodon_client.say(message)
   end
 
   private
@@ -61,21 +68,5 @@ class InvestigateCommand
   def detect_target(text)
     match = text.match(/\[(.+?)\]/)
     match && match[1]
-  end
-
-  def find_sheet_data(target, kind)
-    sheet = @sheet.worksheet("조사")
-    headers = sheet.rows[0]
-    sheet.rows[1..].each do |row|
-      row_hash = Hash[headers.zip(row)]
-      next unless row_hash["대상"] == target
-      # 조사 종류가 "조사"일 경우 "DM조사"도 허용
-      if kind == "조사"
-        return row_hash if ["조사", "DM조사"].include?(row_hash["종류"])
-      else
-        return row_hash if row_hash["종류"] == kind
-      end
-    end
-    nil
   end
 end
