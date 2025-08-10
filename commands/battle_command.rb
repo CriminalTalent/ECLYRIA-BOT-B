@@ -21,10 +21,15 @@ class BattleCommand
 
     case content
     when /\[전투개시\/@?(\w+)\/@?(\w+)\/@?(\w+)\]/
+      # 2:2 전투: [전투개시/@우리팀/@상대방1/@상대방2]
       teammate = $1
       opponent1 = $2  
       opponent2 = $3
       start_team_battle(sender, teammate, opponent1, opponent2, in_reply_to_id)
+    when /\[전투개시\/@?(\w+)\]/
+      # 1:1 전투: [전투개시/@상대방]
+      opponent = $1
+      start_1v1_battle(sender, opponent, in_reply_to_id)
     when /\[허수아비\s+(상|중|하)\]/
       difficulty = $1
       start_scarecrow_battle(sender, difficulty, in_reply_to_id)
@@ -44,6 +49,17 @@ class BattleCommand
   end
 
   private
+
+  def start_1v1_battle(user_id, opponent_id, reply_id)
+    if BattleState.in_battle?(user_id) || BattleState.in_battle?(opponent_id)
+      @mastodon_client.reply(user_id, "당신 혹은 #{opponent_id}는 이미 전투 중입니다.", in_reply_to_id: reply_id)
+      return
+    end
+
+    players = [user_id, opponent_id]
+    BattleEngine.init_1v1(players)
+    BattleEngine.roll_initiative(players)
+  end
 
   def start_team_battle(user_id, teammate, opponent1, opponent2, reply_id)
     team_a = [user_id, teammate]
