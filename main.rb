@@ -1,54 +1,80 @@
 # main.rb
-require 'mastodon'
-require 'google_drive'
 require 'dotenv/load'
-require_relative './command_parser'
-require_relative './core/sheet_manager'
+require 'google/apis/sheets_v4'
+require 'googleauth'
+require 'set'  # Set 모듈 추가
+require_relative 'mastodon_client'
+require_relative 'sheet_manager'
+require_relative 'command_parser'
 
-# ─────────────────────────────
-# 1. 마스토돈 API 초기화
-# ─────────────────────────────
-client = Mastodon::REST::Client.new(
+# 봇 시작 시간 기록
+BOT_START_TIME = Time.now
+puts "[전투봇] 실행 시작 (#{BOT_START_TIME.strftime('%H:%M:%S')})"
+
+# Google Sheets 서비스 초기화
+begin
+  sheets_service = Google::Apis::SheetsV4::SheetsService.new
+  credentials = Google::Auth::ServiceAccountCredentials.make_creds(
+    json_key_io: File.open('credentials.json'),
+    scope: 'https://www.googleapis.com/auth/spreadsheets'
+  )
+  credentials.fetch_access_token!
+  sheets_service.authorization = credentials
+  spreadsheet = sheets_service.get_spreadsheet(ENV["GOOGLE_SHEET_ID"])
+  puts "Google Sheets 연결 성공: #{spreadsheet.properties.title}"
+rescue => e
+  puts "Google Sheets 연결 실패: #{e.message}"
+  exit
+end
+
+# 시트 매니저 초기화
+sheet_manager = SheetManager.new(sheets_service, ENV["GOOGLE_SHEET_ID"])
+
+# 마스토돈 클라이언트 초기화
+mastodon = MastodonClient.new(
   base_url: ENV['MASTODON_BASE_URL'],
-  bearer_token: ENV['MASTODON_ACCESS_TOKEN']
+  token: ENV['MASTODON_TOKEN']
 )
 
-# ─────────────────────────────
-# 2. 구글 시트 연결
-# ─────────────────────────────
-session = GoogleDrive::Session.from_service_account_key('credentials.json') # 서비스 계정 인증
-spreadsheet = session.spreadsheet_by_key(ENV['GOOGLE_SHEET_ID'])
+# 명령어 파서 초기화
+parser = CommandParser.new(mastodon, sheet_manager)
 
-# sheet_manager 초기화
-SheetManager.set_sheet(spreadsheet)
+puts "📅 전투봇 스케줄러 없음 (전투 전용)"
 
-# ─────────────────────────────
-# 3. 명령어 파서 생성
-# ─────────────────────────────
-parser = CommandParser.new(client, spreadsheet)
+# 처리된 멘션 ID 추적 (중복 방지)
+processed_mentions = Set.new
 
-# ─────────────────────────────
-# 4. 스트리밍 처리
-# ─────────────────────────────
-stream = Mastodon::Streaming::Client.new(
-  base_url: ENV['MASTODON_BASE_URL'],
-  bearer_token: ENV['MASTODON_ACCESS_TOKEN']
-)
-
-puts "🤖 봇이 실행되었습니다..."
-stream.user do |event|
-  case event
-  when Mastodon::Streaming::Notification
-    next unless event.type == 'mention'
-    status = event.status
-    user = status.account.acct
+# 멘션 스트리밍 시작
+puts "👂 멘션 스트리밍 시작..."
+mastodon.stream_user do |mention|
+  begin
+    # 멘션 ID로 중복 처리 방지
+    mention_id = mention.id
+    if processed_mentions.include?(mention_id)
+      puts "[무시] 이미 처리된 멘션: #{mention_id}"
+      next
+    end
     
-    # 자기 자신 메시지 무시
-    next if user == client.verify_credentials.acct
+    # 봇 시작 시간 이전의 멘션은 무시
+    mention_time = Time.parse(mention.status.created_at)
+    if mention_time < BOT_START_TIME
+      puts "[무시] 봇 시작 이전 멘션: #{mention_time.strftime('%H:%M:%S')}"
+      next
+    end
+
+    # 멘션 ID 기록
+    processed_mentions.add(mention_id)
     
-    puts "💬 명령 수신 from #{user}: #{status.content.gsub(/<[^>]+>/, '')}"
+    sender_full = mention.account.acct
+    content = mention.status.content
     
-    # 명령 처리
-    parser.handle(status)
+    puts "[처리] 새 멘션 ID #{mention_id}: #{mention_time.strftime('%H:%M:%S')} - @#{sender_full}"
+    puts "[내용] #{content}"
+    
+    # 멘션을 전투 파서로 전달
+    parser.handle(mention.status)
+  rescue => e
+    puts "[에러] 처리 중 예외 발생: #{e.message}"
+    puts e.backtrace.first(5)
   end
 end
