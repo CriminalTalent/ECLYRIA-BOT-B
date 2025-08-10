@@ -56,10 +56,18 @@ module BattleState
   end
 
   def say(message)
+    # 1. 공개 타임라인에 포스트
     if @@mastodon_client
       @@mastodon_client.say(message)
     else
       puts "[BATTLE] #{message}"
+    end
+
+    # 2. 전투 참가자들에게 DM 발송
+    if @@mastodon_client && !@@state[:players].empty?
+      @@state[:players].each do |player|
+        @@mastodon_client.dm(player, message)
+      end
     end
   end
 
