@@ -29,16 +29,16 @@ class CommandParser
     
     # 명령어 라우팅
     case content
-    when /전투개시|허수아비|공격|방어|반격|도주/
+    when /전투개시|허수아비|공격\/|방어\/|공격|방어|반격|도주/
       @battle.handle(status)
     when /물약사용/
       @potion.handle(status)
     when /DM조사결과/
       @dm.handle(status)
-    when /이동|위치확인|주변탐색|은신|협력조사|방해|물건이동|숨기기|흔적조사|조사기록|타임라인/
+    when /이동\/|위치확인|주변탐색|은신|협력조사\/|방해\/|물건이동\/|숨기기\/|흔적조사\/|조사기록\/|타임라인\//
       # 고도화된 조사 시스템 명령어들
       @enhanced_investigate.handle(status)
-    when /조사|정밀조사|감지|훔쳐보기/
+    when /조사\/|정밀조사\/|감지\/|훔쳐보기\//
       # 기존 조사 명령어는 고도화된 시스템으로 처리
       @enhanced_investigate.handle(status)
     else
