@@ -1,73 +1,36 @@
-# commands/battle_command.rb
-require_relative '../core/battle_engine'
-require_relative '../core/battle_state'
+# commands/dm_investigation_command.rb
+require 'date'
 
-class BattleCommand
+class DMInvestigationCommand
   def initialize(mastodon_client, sheet_manager)
     @mastodon_client = mastodon_client
     @sheet_manager = sheet_manager
-    
-    # BattleEngine과 BattleState에 클라이언트 전달
-    BattleState.set_mastodon_client(@mastodon_client)
-    BattleEngine.set_sheet_manager(@sheet_manager)
   end
 
   def handle(status)
     content = status.content.gsub(/<[^>]+>/, '').strip
     sender_full = status.account.acct
     sender = sender_full.split('@').first
-    display_name = status.account.display_name || sender
     in_reply_to_id = status.id
 
-    case content
-    when /\[전투개시\/@?(\w+)\/@?(\w+)\/@?(\w+)\]/
-      teammate = $1
-      opponent1 = $2  
-      opponent2 = $3
-      start_team_battle(sender, teammate, opponent1, opponent2, in_reply_to_id)
-    when /\[허수아비\s+(상|중|하)\]/
-      difficulty = $1
-      start_scarecrow_battle(sender, difficulty, in_reply_to_id)
-    when /공격/
-      BattleEngine.attack(sender)
-    when /방어/
-      BattleEngine.defend(sender)
-    when /반격/
-      BattleEngine.counter(sender)
-    when /도주/
-      BattleEngine.escape(sender)
-    when /물약사용/
-      BattleEngine.use_potion(sender)
+    # DM조사결과 @유저 결과내용 파싱
+    if content.match(/DM조사결과\s+@?(\w+)\s+(.+)/)
+      target_user = $1
+      result_text = $2
+      
+      # DM으로 결과 전송
+      @mastodon_client.dm(target_user, "조사 결과: #{result_text}")
+      
+      # DM이 결과를 전송했으므로 해당 유저의 조사 날짜 업데이트
+      today = Date.today.to_s
+      @sheet_manager.set_stat(target_user, "마지막조사일", today)
+      
+      # DM에게 확인 메시지
+      @mastodon_client.dm(sender, "#{target_user}에게 조사 결과를 DM으로 전송했습니다.")
+      
+      puts "[DM조사] #{sender} -> #{target_user}: #{result_text}"
     else
-      return
+      puts "[DM조사] 명령어 파싱 실패: #{content}"
     end
-  end
-
-  private
-
-  def start_team_battle(user_id, teammate, opponent1, opponent2, reply_id)
-    team_a = [user_id, teammate]
-    team_b = [opponent1, opponent2]
-    all_players = team_a + team_b
-    
-    if all_players.any? { |p| BattleState.in_battle?(p) }
-      @mastodon_client.reply(user_id, "참가자 중 이미 전투 중인 유저가 있습니다.", in_reply_to_id: reply_id)
-      return
-    end
-
-    BattleEngine.init_team_battle(team_a, team_b)
-    BattleEngine.roll_team_initiative(team_a, team_b)
-  end
-
-  def start_scarecrow_battle(user_id, difficulty, reply_id)
-    if BattleState.in_battle?(user_id)
-      @mastodon_client.reply(user_id, "이미 전투 중입니다.", in_reply_to_id: reply_id)
-      return
-    end
-
-    scarecrow_id = "허수아비_#{difficulty}"
-    players = [user_id, scarecrow_id]
-    BattleEngine.init_scarecrow_battle(players, difficulty)
-    BattleEngine.roll_initiative(players)
   end
 end
