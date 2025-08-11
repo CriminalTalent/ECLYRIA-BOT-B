@@ -71,9 +71,27 @@ class EnhancedInvestigateCommand
 
   private
 
-  # 위치 이동 처리
+  # 위치 이동 처리 (이동 포인트 시스템 추가)
   def handle_move(user_id, location, reply_id)
+    # 이동 포인트 확인
+    remaining_points = get_movement_points(user_id)
+    
+    if remaining_points <= 0
+      @mastodon_client.dm(user_id, "이동 포인트가 부족합니다. 조사를 중지해야 합니다.")
+      return
+    end
+    
     current_location = get_user_location(user_id)
+    
+    # 같은 장소로 이동하려는 경우 포인트 차감 없음
+    if current_location == location
+      @mastodon_client.dm(user_id, "이미 #{location}에 있습니다.")
+      return
+    end
+    
+    # 이동 포인트 차감
+    new_points = remaining_points - 1
+    set_movement_points(user_id, new_points)
     
     # 위치 시트에 정보 업데이트
     set_user_location(user_id, location, current_location)
@@ -81,23 +99,26 @@ class EnhancedInvestigateCommand
     # 같은 장소에 있는 다른 조사자들 확인
     others_here = get_investigators_at_location(location).reject { |id| id == user_id }
     
-    # 장소 설명과 행동 선택지 가져오기
+    # 장소 설명 가져오기
     location_info = get_location_info(location)
     
-    message = "#{location}(으)로 이동했습니다.\n\n"
-    message += "#{location_info[:description]}\n\n"
+    message = "#{location}(으)로 이동했습니다. (남은 이동 포인트: #{new_points})\n\n"
+    message += "#{location_info[:description]}"
     
     if others_here.any?
-      message += "현재 이곳에는 #{others_here.join(', ')}님이 있습니다.\n\n"
+      message += "\n\n현재 이곳에는 #{others_here.join(', ')}님이 있습니다."
       
       # 마주침 이벤트 체크
       encounter_event = check_encounter_event(location, [user_id] + others_here)
       if encounter_event
-        message += "#{encounter_event}\n\n"
+        message += "\n\n#{encounter_event}"
       end
     end
     
-    message += "#{location_info[:actions]}"
+    # 이동 포인트가 0이 되면 경고 메시지
+    if new_points == 0
+      message += "\n\n⚠️ 이동 포인트를 모두 소모했습니다. 더 이상 이동할 수 없습니다."
+    end
     
     @mastodon_client.dm(user_id, message)
     
@@ -107,22 +128,21 @@ class EnhancedInvestigateCommand
     end
   end
 
-  # 현재 위치 확인
+  # 현재 위치 확인 (이동 포인트 표시 포함)
   def handle_location_check(user_id, reply_id)
     location = get_user_location(user_id)
     others_here = get_investigators_at_location(location).reject { |id| id == user_id }
+    movement_points = get_movement_points(user_id)
     
-    # 장소 설명과 행동 선택지 가져오기
+    # 장소 설명 가져오기
     location_info = get_location_info(location)
     
-    message = "현재 위치: #{location}\n"
-    message += "#{location_info[:description]}\n\n"
+    message = "현재 위치: #{location} (이동 포인트: #{movement_points})\n"
+    message += "#{location_info[:description]}"
     
     if others_here.any?
-      message += "함께 있는 사람: #{others_here.join(', ')}\n\n"
+      message += "\n\n함께 있는 사람: #{others_here.join(', ')}"
     end
-    
-    message += "#{location_info[:actions]}"
     
     @mastodon_client.dm(user_id, message)
   end
@@ -137,30 +157,28 @@ class EnhancedInvestigateCommand
     stealth = get_user_stealth(user_id)
     detection_roll = rand(1..20) + stealth
     
-    # 장소 설명과 행동 선택지 가져오기
+    # 장소 설명 가져오기
     location_info = get_location_info(location)
     
     message = "#{location} 주변을 탐색합니다.\n"
-    message += "#{location_info[:description]}\n\n"
+    message += "#{location_info[:description]}"
     
     if others_here.any?
       if detection_roll >= 15
-        message += "발견된 사람: #{others_here.join(', ')}\n"
+        message += "\n\n발견된 사람: #{others_here.join(', ')}"
       else
         visible_others = others_here.select { rand(1..20) >= get_user_stealth(_1) }
         if visible_others.any?
-          message += "보이는 사람: #{visible_others.join(', ')}\n"
+          message += "\n\n보이는 사람: #{visible_others.join(', ')}"
         end
       end
     end
     
     if items_here.any?
       if detection_roll >= 12
-        message += "발견된 물건: #{items_here.join(', ')}\n"
+        message += "\n\n발견된 물건: #{items_here.join(', ')}"
       end
     end
-    
-    message += "\n#{location_info[:actions]}"
     
     @mastodon_client.dm(user_id, message)
   end
@@ -187,17 +205,8 @@ class EnhancedInvestigateCommand
     @mastodon_client.dm(user_id, message)
   end
 
-  # 강화된 조사 처리
+  # 강화된 조사 처리 (조사별 스탯 반영)
   def handle_enhanced_investigation(user_id, kind, target, reply_id)
-    # 기존 조사 제한 확인
-    today = Date.today.to_s
-    last_date = @sheet_manager.get_stat(user_id, "마지막조사일")
-
-    if last_date == today
-      @mastodon_client.dm(user_id, "오늘은 이미 조사를 진행하셨습니다.")
-      return
-    end
-
     # 현재 위치 확인
     location = get_user_location(user_id)
     
@@ -219,8 +228,9 @@ class EnhancedInvestigateCommand
 
     # 판정 계산
     difficulty = row["난이도"].to_i
-    luck_stat = @sheet_manager.get_stat(user_id, "행운")
-    base_stat = luck_stat ? luck_stat.to_i : 0
+    
+    # 조사 종류별 스탯 반영
+    base_stat = get_investigation_stat(user_id, kind)
     dice = rand(1..20)
     
     # 보너스/페널티 계산
@@ -284,12 +294,10 @@ class EnhancedInvestigateCommand
     # 조사 기록 저장
     log_investigation(user_id, location, target, kind, success, result_text)
     
-    # 마지막 조사일 업데이트
-    @sheet_manager.set_stat(user_id, "마지막조사일", today)
-    
     # 결과 메시지 구성
+    stat_name = get_stat_name_for_investigation(kind)
     message = "#{kind} 결과: #{result_text}\n"
-    message += "(주사위: #{dice}, 보정: #{base_stat}"
+    message += "(주사위: #{dice}, #{stat_name}: #{base_stat}"
     if bonus != 0
       message += ", 추가: #{bonus_text.join(', ')}"
     end
@@ -656,21 +664,6 @@ class EnhancedInvestigateCommand
 
   # 협력조사 처리 (가상 DM방 구현)
   def handle_cooperative_investigation(user_id, target, partner, reply_id)
-    # 기본 유효성 검사
-    today = Date.today.to_s
-    user_last_date = @sheet_manager.get_stat(user_id, "마지막조사일")
-    partner_last_date = @sheet_manager.get_stat(partner, "마지막조사일")
-
-    if user_last_date == today
-      @mastodon_client.dm(user_id, "오늘은 이미 조사를 진행하셨습니다.")
-      return
-    end
-
-    if partner_last_date == today
-      @mastodon_client.dm(user_id, "#{partner}님은 오늘 이미 조사를 진행했습니다.")
-      return
-    end
-
     # 파트너 존재 확인
     partner_data = @sheet_manager.find_user(partner)
     unless partner_data
@@ -723,10 +716,6 @@ class EnhancedInvestigateCommand
     # 조사 기록 저장 (두 명 모두)
     log_investigation(user_id, user_location, target, "협력조사", success, result_text)
     log_investigation(partner, user_location, target, "협력조사", success, result_text)
-    
-    # 마지막 조사일 업데이트 (두 명 모두)
-    @sheet_manager.set_stat(user_id, "마지막조사일", today)
-    @sheet_manager.set_stat(partner, "마지막조사일", today)
     
     # 가상 DM방 메시지 (두 명에게 동일한 메시지 전송)
     group_message = "=== 협력조사 결과 ===\n"
@@ -842,7 +831,7 @@ class EnhancedInvestigateCommand
     @mastodon_client.dm(user_id, message)
   end
 
-  # 흔적조사 처리
+  # 흔적조사 처리 (민첩 스탯 반영)
   def handle_trace_investigation(user_id, location, reply_id)
     # 해당 장소의 조사 기록 조회
     investigation_history = get_location_investigation_history(location)
@@ -852,10 +841,10 @@ class EnhancedInvestigateCommand
       return
     end
 
-    # 행운 기반 흔적 발견
-    luck_stat = @sheet_manager.get_stat(user_id, "행운")
-    luck = luck_stat ? luck_stat.to_i : 10
-    trace_roll = luck + rand(1..20)
+    # 민첩 기반 흔적 발견
+    agility_stat = @sheet_manager.get_stat(user_id, "민첩")
+    agility = agility_stat ? agility_stat.to_i : 10
+    trace_roll = agility + rand(1..20)
     
     message = "#{location}의 조사 흔적:\n\n"
     
@@ -871,6 +860,8 @@ class EnhancedInvestigateCommand
         break
       end
     end
+    
+    message += "\n(주사위: #{trace_roll - agility}, 민첩: #{agility}, 총합: #{trace_roll})"
     
     @mastodon_client.dm(user_id, message)
   end
@@ -1010,6 +1001,77 @@ class EnhancedInvestigateCommand
     records
   end
 
+  # 이동 포인트 관리
+  def get_movement_points(user_id)
+    values = @sheet_manager.read_values("위치!A:F")
+    return 3 if values.nil? || values.empty?
+    
+    values.each_with_index do |row, index|
+      next if index == 0 # 헤더 스킵
+      if row[0]&.gsub('@', '') == user_id.gsub('@', '')
+        # F열에 이동 포인트 저장 (없으면 기본값 3)
+        return (row[5] || 3).to_i
+      end
+    end
+    
+    # 사용자가 위치 시트에 없으면 기본값으로 설정
+    set_movement_points(user_id, 3)
+    3
+  end
+
+  def set_movement_points(user_id, points)
+    values = @sheet_manager.read_values("위치!A:F")
+    headers = values&.first || ["ID", "현재위치", "이전위치", "이동시간", "은밀도", "이동포인트"]
+    
+    user_found = false
+    values&.each_with_index do |row, index|
+      next if index == 0
+      if row[0]&.gsub('@', '') == user_id.gsub('@', '')
+        # 기존 행의 F열 업데이트
+        row_num = index + 1
+        @sheet_manager.update_values("위치!F#{row_num}", [[points]])
+        user_found = true
+        break
+      end
+    end
+    
+    unless user_found
+      # 새 행 추가 (이동포인트 포함)
+      timestamp = Time.now.strftime('%Y-%m-%d %H:%M:%S')
+      @sheet_manager.append_values("위치!A:F", 
+        [[user_id, "중앙홀", nil, timestamp, 0, points]])
+    end
+  end
+
+  # 조사별 스탯 반영
+  def get_investigation_stat(user_id, kind)
+    case kind
+    when "조사", "정밀조사"
+      stat = @sheet_manager.get_stat(user_id, "행운")
+    when "감지"
+      stat = @sheet_manager.get_stat(user_id, "마력")
+    when "훔쳐보기"
+      stat = @sheet_manager.get_stat(user_id, "민첩")
+    else
+      stat = @sheet_manager.get_stat(user_id, "행운") # 기본값
+    end
+    
+    stat ? stat.to_i : 10
+  end
+
+  def get_stat_name_for_investigation(kind)
+    case kind
+    when "조사", "정밀조사"
+      "행운"
+    when "감지"
+      "마력"
+    when "훔쳐보기"
+      "민첩"
+    else
+      "행운"
+    end
+  end
+
   # 아이템 조사 기록 조회
   def get_item_investigation_history(item_name)
     values = @sheet_manager.read_values("조사로그!A:G")
@@ -1028,6 +1090,27 @@ class EnhancedInvestigateCommand
     end
     
     records
+  end
+
+  # 전투 관련 임시 핸들러 (향후 확장 예정)
+  def handle_targeted_attack(user_id, target, reply_id)
+    @mastodon_client.dm(user_id, "특정 대상 공격 기능은 향후 구현될 예정입니다. 현재는 [공격] 명령어를 사용해주세요.")
+  end
+
+  # 일일 이동 포인트 리셋 (필요 시 호출)
+  def reset_all_movement_points
+    values = @sheet_manager.read_values("위치!A:F")
+    return if values.nil? || values.empty?
+    
+    values.each_with_index do |row, index|
+      next if index == 0 # 헤더 스킵
+      if row[0] # ID가 있는 행
+        row_num = index + 1
+        @sheet_manager.update_values("위치!F#{row_num}", [[3]]) # 3포인트로 리셋
+      end
+    end
+    
+    puts "[시스템] 모든 플레이어의 이동 포인트를 3으로 리셋했습니다."
   end
 
   # 전투 관련 임시 핸들러 (향후 확장 예정)
