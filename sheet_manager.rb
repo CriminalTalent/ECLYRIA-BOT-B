@@ -86,7 +86,7 @@ class SheetManager
     
     values.each_with_index do |row, index|
       next if index == 0 # 헤더 스킵
-      row_id = (row[index] || "").gsub('@', '')
+      row_id = (row[id_index] || "").gsub('@', '')
       if row_id == clean_user_id
         # Google Sheets는 1-based index
         sheet_row = index + 1
@@ -121,28 +121,24 @@ class SheetManager
     nil
   end
 
-  # 조사 시트 관련 메서드
+  # 통합 조사 시트 관련 메서드
   def find_investigation_data(target, kind)
-    values = read_values("조사!A:Z")
+    values = read_values("조사!A:K")
     return nil if values.nil? || values.empty?
     
     headers = values[0]
-    target_index = headers.index("대상")
-    kind_index = headers.index("종류")
-    return nil unless target_index && kind_index
-    
     values.each_with_index do |row, index|
       next if index == 0 # 헤더 스킵
-      if row[target_index] == target
+      if row[0] == target # 대상명 매칭 (A열)
         # 조사 종류가 "조사"일 경우 "DM조사"도 허용
         if kind == "조사"
-          if ["조사", "DM조사"].include?(row[kind_index])
+          if ["조사", "DM조사"].include?(row[1]) # 종류 (B열)
             result = {}
             headers.each_with_index { |header, col_index| result[header] = row[col_index] }
             return result
           end
         else
-          if row[kind_index] == kind
+          if row[1] == kind # 종류 매칭 (B열)
             result = {}
             headers.each_with_index { |header, col_index| result[header] = row[col_index] }
             return result
