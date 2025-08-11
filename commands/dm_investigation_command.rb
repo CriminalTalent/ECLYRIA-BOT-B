@@ -21,10 +21,6 @@ class DMInvestigationCommand
       # DM으로 결과 전송
       @mastodon_client.dm(target_user, "조사 결과: #{result_text}")
       
-      # DM이 결과를 전송했으므로 해당 유저의 조사 날짜 업데이트
-      today = Date.today.to_s
-      @sheet_manager.set_stat(target_user, "마지막조사일", today)
-      
       # DM에게 확인 메시지
       @mastodon_client.dm(sender, "#{target_user}에게 조사 결과를 DM으로 전송했습니다.")
       
