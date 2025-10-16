@@ -22,7 +22,9 @@ class CommandParser
     content = status.content.gsub(/<[^>]*>/, '').strip
     sender_full = status.account.acct
     
-    # sender ID 정규화 (@domain 부분 제거)
+    # sender ID 정규화 - 다른 서버 호환성을 위해 도메인 부분 제거
+    # 예: "Store@fortunaefons.masto.host" → "Store"
+    # 예: "professor@eclyria.pics" → "professor"
     sender = sender_full.split('@').first
     
     puts "[전투봇] 처리 중: #{content} (from @#{sender_full} -> #{sender})"
@@ -41,6 +43,9 @@ class CommandParser
     when /조사\/|정밀조사\/|감지\/|훔쳐보기\//
       # 기존 조사 명령어는 고도화된 시스템으로 처리
       @enhanced_investigate.handle(status)
+    when /\[조사\]/, /\[정밀조사\]/, /\[감지\]/, /\[훔쳐보기\]/
+      # 대괄호 형식 조사 명령어도 지원
+      @investigate.handle(status)
     else
       puts "[무시] 인식되지 않은 명령어: #{content}"
     end
