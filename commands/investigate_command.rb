@@ -12,61 +12,69 @@ class InvestigateCommand
     sender_full = status.account.acct
     sender = sender_full.split('@').first
     in_reply_to_id = status.id
-
-    kind = detect_kind(content)
-    target = detect_target(content)
     
-    unless kind && target
-      puts "[조사] 명령어 파싱 실패: kind=#{kind}, target=#{target}"
+    # DM이 아닌 경우 조사 불가
+    if status.visibility != 'direct'
+      @mastodon_client.reply(sender, "조사는 DM에서만 가능합니다. 저에게 DM으로 명령어를 보내주세요.", in_reply_to_id: in_reply_to_id)
       return
     end
 
-    today = Date.today.to_s
-    last_date = @sheet_manager.get_stat(sender, "마지막조사일")
-
-    if last_date == today
-      @mastodon_client.reply(sender, "오늘은 이미 조사를 진행하셨습니다.", in_reply_to_id: in_reply_to_id)
-      return
-    end
-
-    row = @sheet_manager.find_investigation_data(target, kind)
-    unless row
-      @mastodon_client.reply(sender, "해당 대상에 대한 #{kind} 정보가 없습니다.", in_reply_to_id: in_reply_to_id)
-      return
-    end
-
-    difficulty = row["난이도"].to_i
-    luck_stat = @sheet_manager.get_stat(sender, "행운")
-    stat = luck_stat ? luck_stat.to_i : 0
-    dice = rand(1..20)
-    result_value = dice + stat
-
-    if result_value >= difficulty
-      result_text = row["성공결과"]
+    case content
+    when /\[(조사|정밀조사|감지|훔쳐보기)\]\s+(.+)/
+      kind = $1
+      target = $2.strip
+      investigate(sender, kind, target, in_reply_to_id)
     else
-      result_text = row["실패결과"]
+      return
     end
-
-    @sheet_manager.set_stat(sender, "마지막조사일", today)
-    
-    message = "#{sender}의 #{kind} 결과: #{result_text} (주사위: #{dice}, 보정: #{stat}, 총합: #{result_value}/#{difficulty})"
-    @mastodon_client.say(message)
   end
 
   private
 
-  def detect_kind(text)
-    case text
-    when /정밀조사/ then "정밀조사"
-    when /감지/ then "감지"
-    when /훔쳐보기/ then "훔쳐보기"
-    when /조사/ then "조사"
-    else nil
+  def investigate(user_id, kind, target, reply_id)
+    today = Date.today.to_s
+    last_date_stat = @sheet_manager.get_stat(user_id, "마지막조사일")
+    
+    if last_date_stat == today
+      @mastodon_client.dm(user_id, "오늘의 조사 기회를 모두 사용했습니다. 내일 다시 시도하세요.")
+      return
     end
-  end
 
-  def detect_target(text)
-    match = text.match(/\[(.+?)\]/)
-    match && match[1]
+    rows = @sheet_manager.read_values("조사!A:E")
+    return unless rows
+
+    rows.each_with_index do |row, index|
+      next if index == 0
+      
+      target_name = row[0]
+      inv_kind = row[1]
+      difficulty = row[2].to_i rescue 30
+      success_result = row[3]
+      fail_result = row[4]
+
+      next unless target_name == target
+
+      if inv_kind == kind || (kind == "조사" && inv_kind == "DM조사")
+        luck_stat = @sheet_manager.get_stat(user_id, "행운")
+        luck = luck_stat ? luck_stat.to_i : 10
+        
+        roll = rand(1..20)
+        total = luck + roll
+        
+        success = total >= difficulty
+        result = success ? success_result : fail_result
+        
+        @sheet_manager.set_stat(user_id, "마지막조사일", today)
+        
+        message = "조사 결과 (#{kind} - #{target})\n"
+        message += "판정: #{total} (행운 #{luck} + 주사위 #{roll}) vs 난이도 #{difficulty}\n"
+        message += "결과: #{result}"
+        
+        @mastodon_client.dm(user_id, message)
+        return
+      end
+    end
+    
+    @mastodon_client.dm(user_id, "#{target}에 대한 #{kind} 항목을 찾을 수 없습니다.")
   end
 end
