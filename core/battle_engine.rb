@@ -6,9 +6,9 @@ module BattleEngine
 
   @@sheet_manager = nil
   @@scarecrow_stats = {
-    "허수아비_하" => { "체력" => 60, "공격력" => 8, "방어력" => 6, "민첩" => 8 },
-    "허수아비_중" => { "체력" => 80, "공격력" => 12, "방어력" => 10, "민첩" => 12 },
-    "허수아비_상" => { "체력" => 100, "공격력" => 16, "방어력" => 14, "민첩" => 16 }
+    "허수아비_하" => { "체력" => 60, "공격력" => 3, "방어력" => 3, "민첩" => 3 },
+    "허수아비_중" => { "체력" => 80, "공격력" => 4, "방어력" => 4, "민첩" => 4 },
+    "허수아비_상" => { "체력" => 100, "공격력" => 5, "방어력" => 5, "민첩" => 5 }
   }
 
   def set_sheet_manager(sheet_manager)
@@ -42,7 +42,6 @@ module BattleEngine
     msg = "선공 #{sorted[0][0]}, 후공 #{sorted[1][0]} 전투를 시작합니다."
     BattleState.say(msg)
     
-    # 허수아비가 선공이면 즉시 AI 행동
     if sorted[0][0].include?("허수아비")
       scarecrow_ai_action(sorted[0][0])
     end
@@ -60,18 +59,26 @@ module BattleEngine
     end / team_b.size + rand(1..20)
 
     first_team = a_total >= b_total ? team_a : team_b
-    BattleState.set_turn(first_team[0]) # 팀의 첫 번째 플레이어
+    BattleState.set_turn(first_team[0])
     msg = "선공 팀 (#{first_team.join(", ")}), 후공 팀 (#{(first_team == team_a ? team_b : team_a).join(", ")}) 전투를 시작합니다."
     BattleState.say(msg)
   end
 
   def get_stat_value(player, stat_name)
     if player.include?("허수아비")
-      return @@scarecrow_stats[player][stat_name] || 10
+      raw_value = @@scarecrow_stats[player][stat_name] || 3
     else
       stat = @@sheet_manager.get_stat(player, stat_name)
-      return stat ? stat.to_i : 10
+      raw_value = stat ? stat.to_i : 3
     end
+    
+    # 공격력, 방어력, 민첩 스탯을 1~5 범위로 제한
+    if ["공격력", "방어력", "민첩"].include?(stat_name)
+      return [[raw_value, 1].max, 5].min
+    end
+    
+    # 체력과 기타 스탯은 제한 없음
+    return raw_value
   end
 
   def attack(user)
@@ -80,7 +87,6 @@ module BattleEngine
       return
     end
 
-    # 사용자가 행동했으므로 타이머 취소
     BattleState.cancel_turn_timer
 
     defender = BattleState.get_opponent(user)
@@ -94,7 +100,6 @@ module BattleEngine
     dmg = [atk - def_val, 0].max
     
     if defender.include?("허수아비")
-      # 허수아비 체력 처리
       current_hp = @@scarecrow_stats[defender]["체력"]
       new_hp = current_hp - dmg
       @@scarecrow_stats[defender]["체력"] = new_hp
@@ -105,7 +110,6 @@ module BattleEngine
       user_hp = get_stat_value(user, "체력")
       msg += "남은 체력 - #{user}: #{user_hp} / #{defender}: #{new_hp}"
     else
-      # 일반 플레이어 체력 처리
       hp_stat = @@sheet_manager.get_stat(defender, "체력")
       current_hp = hp_stat ? hp_stat.to_i : 100
       new_hp = current_hp - dmg
@@ -124,7 +128,6 @@ module BattleEngine
     check_ending(defender)
     BattleState.next_turn
     
-    # 다음 턴이 허수아비면 AI 행동
     next_player = BattleState.get_turn
     if next_player && next_player.include?("허수아비")
       scarecrow_ai_action(next_player)
@@ -137,14 +140,12 @@ module BattleEngine
       return
     end
 
-    # 사용자가 행동했으므로 타이머 취소
     BattleState.cancel_turn_timer
 
     msg = "#{user}이(가) 방어 자세를 취합니다. 다음 턴으로 넘어갑니다."
     BattleState.say(msg)
     BattleState.next_turn
     
-    # 다음 턴이 허수아비면 AI 행동
     next_player = BattleState.get_turn
     if next_player && next_player.include?("허수아비")
       scarecrow_ai_action(next_player)
@@ -157,7 +158,6 @@ module BattleEngine
       return
     end
 
-    # 사용자가 행동했으므로 타이머 취소
     BattleState.cancel_turn_timer
 
     attacker = BattleState.get_opponent(user)
@@ -171,7 +171,6 @@ module BattleEngine
     dmg = [counter - def_val, 0].max
     
     if attacker.include?("허수아비")
-      # 허수아비 체력 처리
       current_hp = @@scarecrow_stats[attacker]["체력"]
       new_hp = current_hp - dmg
       @@scarecrow_stats[attacker]["체력"] = new_hp
@@ -182,7 +181,6 @@ module BattleEngine
       user_hp = get_stat_value(user, "체력")
       msg += "남은 체력 - #{attacker}: #{new_hp} / #{user}: #{user_hp}"
     else
-      # 일반 플레이어 체력 처리
       hp_stat = @@sheet_manager.get_stat(attacker, "체력")
       current_hp = hp_stat ? hp_stat.to_i : 100
       new_hp = current_hp - dmg
@@ -201,7 +199,6 @@ module BattleEngine
     check_ending(attacker)
     BattleState.next_turn
     
-    # 다음 턴이 허수아비면 AI 행동
     next_player = BattleState.get_turn
     if next_player && next_player.include?("허수아비")
       scarecrow_ai_action(next_player)
@@ -214,7 +211,6 @@ module BattleEngine
       return
     end
 
-    # 사용자가 행동했으므로 타이머 취소
     BattleState.cancel_turn_timer
 
     opp = BattleState.get_opponent(user)
@@ -222,8 +218,8 @@ module BattleEngine
     luck_stat = @@sheet_manager.get_stat(user, "행운")
     agi_stat = @@sheet_manager.get_stat(user, "민첩")
     
-    luck = luck_stat ? luck_stat.to_i : 10
-    agi = agi_stat ? agi_stat.to_i : 10
+    luck = luck_stat ? luck_stat.to_i : 3
+    agi = agi_stat ? agi_stat.to_i : 3
     opp_agi = get_stat_value(opp, "민첩")
     
     esc_val = luck + agi + rand(1..20)
@@ -238,7 +234,6 @@ module BattleEngine
       BattleState.say(msg)
       BattleState.next_turn
       
-      # 다음 턴이 허수아비면 AI 행동
       next_player = BattleState.get_turn
       if next_player && next_player.include?("허수아비")
         scarecrow_ai_action(next_player)
@@ -252,7 +247,6 @@ module BattleEngine
       return
     end
 
-    # 사용자가 행동했으므로 타이머 취소
     BattleState.cancel_turn_timer
 
     amount = [5, 10, 15, 20].sample
@@ -272,76 +266,32 @@ module BattleEngine
     BattleState.say(msg)
     BattleState.next_turn
     
-    # 다음 턴이 허수아비면 AI 행동
     next_player = BattleState.get_turn
     if next_player && next_player.include?("허수아비")
       scarecrow_ai_action(next_player)
     end
   end
 
-  def check_ending(player)
-    hp = if player.include?("허수아비")
-      @@scarecrow_stats[player]["체력"]
+  def check_ending(defender)
+    hp = if defender.include?("허수아비")
+      @@scarecrow_stats[defender]["체력"]
     else
-      hp_stat = @@sheet_manager.get_stat(player, "체력")
+      hp_stat = @@sheet_manager.get_stat(defender, "체력")
       hp_stat ? hp_stat.to_i : 100
     end
-    
+
     if hp <= 0
-      msg = "#{player}의 체력이 0이 되어 전투가 종료됩니다."
+      msg = "#{defender}의 체력이 0이 되었습니다. 전투 종료!"
       BattleState.say(msg)
       BattleState.end
     end
   end
 
-  # 허수아비 AI 행동 패턴
   def scarecrow_ai_action(scarecrow_id)
-    sleep(2) # 2초 대기로 자연스러운 느낌
+    actions = [:ai_attack, :ai_defend, :ai_counter, :ai_use_potion]
+    selected = actions.sample
     
-    # 허수아비의 난이도에 따른 행동 패턴
-    difficulty = scarecrow_id.split("_")[1]
-    
-    case difficulty
-    when "하"
-      # 70% 공격, 20% 방어, 10% 물약
-      action = rand(100) < 70 ? "공격" : (rand(100) < 80 ? "방어" : "물약사용")
-    when "중"
-      # 60% 공격, 25% 방어, 10% 반격, 5% 물약
-      rand_val = rand(100)
-      action = if rand_val < 60
-        "공격"
-      elsif rand_val < 85
-        "방어"
-      elsif rand_val < 95
-        "반격"
-      else
-        "물약사용"
-      end
-    when "상"
-      # 50% 공격, 20% 방어, 25% 반격, 5% 물약
-      rand_val = rand(100)
-      action = if rand_val < 50
-        "공격"
-      elsif rand_val < 70
-        "방어"
-      elsif rand_val < 95
-        "반격"
-      else
-        "물약사용"
-      end
-    end
-
-    # AI 행동 실행
-    case action
-    when "공격"
-      ai_attack(scarecrow_id)
-    when "방어"  
-      ai_defend(scarecrow_id)
-    when "반격"
-      ai_counter(scarecrow_id)
-    when "물약사용"
-      ai_use_potion(scarecrow_id)
-    end
+    send(selected, scarecrow_id)
   end
 
   def ai_attack(scarecrow_id)
