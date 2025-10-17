@@ -5,37 +5,37 @@ module BattleState
 
   # 전투 상태 저장
   @@state = {
-    players: [],      # 전체 참가자 ID 목록
-    team_a: [],       # 팀 A
-    team_b: [],       # 팀 B
-    turn: nil,        # 현재 턴인 사용자 ID
-    scarecrow: false, # 허수아비 전투 여부
-    difficulty: nil   # 허수아비 난이도
+    players: [],      
+    team_a: [],       
+    team_b: [],       
+    turn: nil,        
+    scarecrow: false, 
+    difficulty: nil,
+    battle_context: nil  # 전투 시작 컨텍스트 추가 ('dm' or 'timeline')
   }
 
   @@mastodon_client = nil
-  @@turn_timer = nil  # 턴 타이머
+  @@turn_timer = nil
 
   def set_mastodon_client(client)
     @@mastodon_client = client
   end
 
-  def set(players:, team_a: nil, team_b: nil, turn: nil, scarecrow: false, difficulty: nil)
+  def set(players:, team_a: nil, team_b: nil, turn: nil, scarecrow: false, difficulty: nil, context: nil)
     @@state[:players] = players
     @@state[:team_a] = team_a || []
     @@state[:team_b] = team_b || []
     @@state[:turn] = turn
     @@state[:scarecrow] = scarecrow
     @@state[:difficulty] = difficulty
+    @@state[:battle_context] = context || 'timeline'  # 기본값 타임라인
   end
 
   def set_turn(user_id)
-    # 기존 타이머 취소
     cancel_turn_timer
     
     @@state[:turn] = user_id
     
-    # 허수아비가 아닌 경우에만 타이머 설정
     unless user_id.include?("허수아비")
       start_turn_timer(user_id)
     end
@@ -43,9 +43,8 @@ module BattleState
 
   def start_turn_timer(user_id)
     @@turn_timer = Thread.new do
-      sleep(300) # 5분 = 300초
+      sleep(300)
       
-      # 5분 후에도 여전히 같은 사용자 턴이면 타임아웃
       if @@state[:turn] == user_id && !@@state[:players].empty?
         say("#{user_id}님이 5분간 응답이 없어 턴이 자동으로 넘어갑니다.")
         next_turn
@@ -63,7 +62,6 @@ module BattleState
   def next_turn
     return unless @@state[:turn] && !@@state[:players].empty?
     
-    # 현재 타이머 취소
     cancel_turn_timer
     
     current_index = @@state[:players].index(@@state[:turn])
@@ -74,7 +72,6 @@ module BattleState
     
     @@state[:turn] = next_player
     
-    # 새로운 턴 플레이어에 대해 타이머 설정
     unless next_player.include?("허수아비")
       start_turn_timer(next_player)
     end
@@ -89,17 +86,13 @@ module BattleState
   end
 
   def get_opponent(user_id)
-    # 팀 전투인 경우
     if !@@state[:team_a].empty? && !@@state[:team_b].empty?
       if @@state[:team_a].include?(user_id)
-        # A팀 소속이면 B팀에서 체력이 남은 첫 번째 플레이어 반환
         return @@state[:team_b].first
       else
-        # B팀 소속이면 A팀에서 체력이 남은 첫 번째 플레이어 반환
         return @@state[:team_a].first
       end
     else
-      # 일반 1:1 전투 (허수아비 포함)
       others = @@state[:players] - [user_id]
       others.first
     end
@@ -109,40 +102,62 @@ module BattleState
     @@state[:players].include?(user_id)
   end
 
-  def say(message)
-    # 1. 공개 타임라인에 포스트
-    if @@mastodon_client
-      @@mastodon_client.say(message)
-    else
-      puts "[BATTLE] #{message}"
-    end
+  def get_context
+    @@state[:battle_context] || 'timeline'
+  end
 
-    # 2. 전투 참가자들에게 DM 발송 (허수아비 제외)
-    if @@mastodon_client && !@@state[:players].empty?
-      @@state[:players].each do |player|
-        # 허수아비는 DM 제외
-        unless player.include?("허수아비")
-          @@mastodon_client.dm(player, message)
+  def say(message)
+    context = get_context
+    
+    # 컨텍스트에 따라 알림 방식 결정
+    if context == 'dm'
+      # DM으로 시작된 전투는 DM으로만 알림
+      if @@mastodon_client && !@@state[:players].empty?
+        @@state[:players].each do |player|
+          unless player.include?("허수아비")
+            @@mastodon_client.dm(player, message)
+          end
         end
+      end
+    else
+      # 타임라인으로 시작된 전투는 타임라인으로만 알림
+      if @@mastodon_client
+        @@mastodon_client.say(message)
+      else
+        puts "[BATTLE] #{message}"
       end
     end
   end
 
-  def end
-    # 타이머 취소
+  def clear
     cancel_turn_timer
-    
     @@state = {
       players: [],
       team_a: [],
       team_b: [],
       turn: nil,
       scarecrow: false,
-      difficulty: nil
+      difficulty: nil,
+      battle_context: nil
     }
   end
 
-  def current_state
-    @@state
+  def get_players
+    @@state[:players]
+  end
+
+  def get_teams
+    {
+      team_a: @@state[:team_a],
+      team_b: @@state[:team_b]
+    }
+  end
+
+  def is_scarecrow_battle?
+    @@state[:scarecrow]
+  end
+
+  def get_difficulty
+    @@state[:difficulty]
   end
 end
