@@ -215,7 +215,7 @@ class SheetManager
       next if index == 0
       if row[0] == target
         if kind == "조사"
-          if ["조사", "DM조사"].include?(row[1])
+          if ["조사", "DM조사"].include?(row[2])
             result = {}
             headers.each_with_index { |header, col_index| result[header] = row[col_index] }
             return result
