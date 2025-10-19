@@ -15,20 +15,20 @@ module BattleEngine
     @@sheet_manager = sheet_manager
   end
 
-  def init_1v1(players)
-    BattleState.set(players: players, turn: nil)
+  def init_1v1(players, context = 'timeline')
+    BattleState.set(players: players, turn: nil, context: context)
   end
 
-  def init_scarecrow_battle(players, difficulty)
-    BattleState.set(players: players, turn: nil, scarecrow: true, difficulty: difficulty)
+  def init_scarecrow_battle(players, difficulty, context = 'timeline')
+    BattleState.set(players: players, turn: nil, scarecrow: true, difficulty: difficulty, context: context)
   end
 
-  def init_multi_battle(team_a, team_b)
-    BattleState.set(players: team_a + team_b, team_a: team_a, team_b: team_b, turn: nil)
+  def init_multi_battle(team_a, team_b, context = 'timeline')
+    BattleState.set(players: team_a + team_b, team_a: team_a, team_b: team_b, turn: nil, context: context)
   end
 
-  def init_team_battle(team_a, team_b)
-    BattleState.set(players: team_a + team_b, team_a: team_a, team_b: team_b, turn: nil)
+  def init_team_battle(team_a, team_b, context = 'timeline')
+    BattleState.set(players: team_a + team_b, team_a: team_a, team_b: team_b, turn: nil, context: context)
   end
 
   def roll_initiative(players)
