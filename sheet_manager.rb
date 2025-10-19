@@ -221,7 +221,7 @@ class SheetManager
             return result
           end
         else
-          if row[1] == kind
+          if row[2] == kind
             result = {}
             headers.each_with_index { |header, col_index| result[header] = row[col_index] }
             return result
