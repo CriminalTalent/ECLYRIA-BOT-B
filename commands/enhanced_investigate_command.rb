@@ -13,6 +13,12 @@ class EnhancedInvestigateCommand
     sender = sender_full.split('@').first
     in_reply_to_id = status.id
 
+    # DM인지 확인
+    unless status.visibility == 'direct'
+      @mastodon_client.reply(status, "조사 명령어는 DM으로만 사용 가능합니다.")
+      return
+    end
+
     case content
     when /\[조사\/(.+?)\]/
       target = $1
@@ -66,35 +72,33 @@ class EnhancedInvestigateCommand
   def handle_basic_investigation(user, target, status)
     investigation = @sheet_manager.find_investigation(target, "조사")
     
-    if investigation && investigation["결과"]
-      result = investigation["결과"]
-      @mastodon_client.reply(status, "#{target}에 대한 조사 결과:\n#{result}")
+    if investigation
+      result = investigation["출력내용"] || investigation["결과"] || "조사 결과가 비어있습니다."
+      @mastodon_client.dm(user, "#{target}에 대한 조사 결과:\n#{result}")
     else
-      @mastodon_client.reply(status, "#{target}에 대한 조사 정보를 찾을 수 없습니다.")
+      @mastodon_client.dm(user, "#{target}에 대한 조사 정보를 찾을 수 없습니다. 스프레드시트의 '조사' 탭에 해당 대상이 등록되어 있는지 확인해주세요.")
     end
   end
 
   def handle_detailed_investigation(user, target, status)
     investigation = @sheet_manager.find_investigation(target, "정밀조사")
     
-    if investigation && investigation["결과"]
-      result = investigation["결과"]
-      @mastodon_client.reply(status, "#{target}에 대한 정밀조사 결과:\n#{result}")
+    if investigation
+      result = investigation["출력내용"] || investigation["결과"] || "정밀조사 결과가 비어있습니다."
+      @mastodon_client.dm(user, "#{target}에 대한 정밀조사 결과:\n#{result}")
     else
-      @mastodon_client.reply(status, "#{target}에 대한 정밀조사 정보를 찾을 수 없습니다.")
+      @mastodon_client.dm(user, "#{target}에 대한 정밀조사 정보를 찾을 수 없습니다. 스프레드시트의 '조사' 탭에 해당 대상이 등록되어 있는지 확인해주세요.")
     end
   end
 
   def handle_stealth_investigation(user, target, status)
     investigation = @sheet_manager.find_investigation(target, "훔쳐보기")
     
-    if investigation && investigation["결과"]
-      result = investigation["결과"]
-      # 훔쳐보기는 DM으로 전송
+    if investigation
+      result = investigation["출력내용"] || investigation["결과"] || "훔쳐보기 결과가 비어있습니다."
       @mastodon_client.dm(user, "#{target}에 대한 은밀 조사 결과:\n#{result}")
-      @mastodon_client.reply(status, "조사를 진행했습니다. 결과는 DM으로 전송되었습니다.")
     else
-      @mastodon_client.reply(status, "#{target}에 대한 조사 정보를 찾을 수 없습니다.")
+      @mastodon_client.dm(user, "#{target}에 대한 조사 정보를 찾을 수 없습니다. 스프레드시트의 '조사' 탭에 해당 대상이 등록되어 있는지 확인해주세요.")
     end
   end
 
