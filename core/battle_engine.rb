@@ -1,371 +1,476 @@
-# core/battle_engine.rb
 require_relative 'battle_state'
 
-module BattleEngine
-  module_function
-
-  @@sheet_manager = nil
-  @@scarecrow_stats = {
-    "허수아비_하" => { "체력" => 60, "공격력" => 3, "방어력" => 3, "민첩" => 3 },
-    "허수아비_중" => { "체력" => 80, "공격력" => 4, "방어력" => 4, "민첩" => 4 },
-    "허수아비_상" => { "체력" => 100, "공격력" => 5, "방어력" => 5, "민첩" => 5 }
+class BattleEngine
+  DUMMY_STATS = {
+    "하" => { hp: 60, atk: 8, def: 6, agi: 8 },
+    "중" => { hp: 80, atk: 12, def: 10, agi: 12 },
+    "상" => { hp: 100, atk: 16, def: 14, agi: 16 }
   }
 
-  def set_sheet_manager(sheet_manager)
-    @@sheet_manager = sheet_manager
+  def initialize(mastodon_client, sheet_manager)
+    @mastodon_client = mastodon_client
+    @sheet_manager = sheet_manager
   end
 
-  def init_1v1(players, context = 'timeline')
-    BattleState.set(players: players, turn: nil, context: context)
-  end
+  def start_1v1(user1_id, user2_id, reply_id)
+    user1 = @sheet_manager.find_user(user1_id)
+    user2 = @sheet_manager.find_user(user2_id)
 
-  def init_scarecrow_battle(players, difficulty, context = 'timeline')
-    BattleState.set(players: players, turn: nil, scarecrow: true, difficulty: difficulty, context: context)
-  end
-
-  def init_multi_battle(team_a, team_b, context = 'timeline')
-    BattleState.set(players: team_a + team_b, team_a: team_a, team_b: team_b, turn: nil, context: context)
-  end
-
-  def init_team_battle(team_a, team_b, context = 'timeline')
-    BattleState.set(players: team_a + team_b, team_a: team_a, team_b: team_b, turn: nil, context: context)
-  end
-
-  def roll_initiative(players)
-    stats = players.map do |p|
-      agility = get_stat_value(p, "민첩")
-      [p, agility + rand(1..20)]
-    end
-    sorted = stats.sort_by { |_, roll| -roll }
-
-    BattleState.set_turn(sorted[0][0])
-    msg = "선공 #{sorted[0][0]}, 후공 #{sorted[1][0]} 전투를 시작합니다."
-    BattleState.say(msg)
-    
-    if sorted[0][0].include?("허수아비")
-      scarecrow_ai_action(sorted[0][0])
-    end
-  end
-
-  def roll_team_initiative(team_a, team_b)
-    a_total = team_a.sum do |p|
-      agility = get_stat_value(p, "민첩")
-      agility
-    end / team_a.size + rand(1..20)
-    
-    b_total = team_b.sum do |p|
-      agility = get_stat_value(p, "민첩")
-      agility
-    end / team_b.size + rand(1..20)
-
-    first_team = a_total >= b_total ? team_a : team_b
-    BattleState.set_turn(first_team[0])
-    msg = "선공 팀 (#{first_team.join(", ")}), 후공 팀 (#{(first_team == team_a ? team_b : team_a).join(", ")}) 전투를 시작합니다."
-    BattleState.say(msg)
-  end
-
-  def get_stat_value(player, stat_name)
-    if player.include?("허수아비")
-      raw_value = @@scarecrow_stats[player][stat_name] || 3
-    else
-      stat = @@sheet_manager.get_stat(player, stat_name)
-      raw_value = stat ? stat.to_i : 3
-    end
-    
-    # 공격력, 방어력, 민첩 스탯을 1~5 범위로 제한
-    if ["공격력", "방어력", "민첩"].include?(stat_name)
-      return [[raw_value, 1].max, 5].min
-    end
-    
-    # 체력과 기타 스탯은 제한 없음
-    return raw_value
-  end
-
-  def attack(user)
-    unless BattleState.is_current_turn?(user)
-      BattleState.say("#{user}님의 턴이 아닙니다.")
+    unless user1 && user2
+      @mastodon_client.reply(reply_id, "참가자 중 등록되지 않은 사용자가 있습니다.", visibility: 'public')
       return
     end
 
-    BattleState.cancel_turn_timer
+    agi1 = (user1["민첩"] || 10).to_i + rand(1..20)
+    agi2 = (user2["민첩"] || 10).to_i + rand(1..20)
 
-    defender = BattleState.get_opponent(user)
-    
-    atk_stat = get_stat_value(user, "공격력")
-    def_stat = get_stat_value(defender, "방어력")
-    
-    atk = atk_stat + rand(1..20)
-    def_val = def_stat + rand(1..20)
-
-    dmg = [atk - def_val, 0].max
-    
-    if defender.include?("허수아비")
-      current_hp = @@scarecrow_stats[defender]["체력"]
-      new_hp = current_hp - dmg
-      @@scarecrow_stats[defender]["체력"] = new_hp
-      
-      msg = "#{user}의 공격! #{defender}에게 #{dmg} 피해를 입혔습니다.\n"
-      msg += "#{user}의 공격 : #{atk}, #{defender}의 방어 #{def_val}\n"
-      
-      user_hp = get_stat_value(user, "체력")
-      msg += "남은 체력 - #{user}: #{user_hp} / #{defender}: #{new_hp}"
+    if agi1 >= agi2
+      turn_order = [user1_id, user2_id]
     else
-      hp_stat = @@sheet_manager.get_stat(defender, "체력")
-      current_hp = hp_stat ? hp_stat.to_i : 100
-      new_hp = current_hp - dmg
-      
-      @@sheet_manager.set_stat(defender, "체력", new_hp)
-
-      msg = "#{user}의 공격! #{defender}에게 #{dmg} 피해를 입혔습니다.\n"
-      msg += "#{user}의 공격 : #{atk}, #{defender}의 방어 #{def_val}\n"
-      
-      user_hp = get_stat_value(user, "체력")
-      msg += "남은 체력 - #{user}: #{user_hp} / #{defender}: #{new_hp}"
+      turn_order = [user2_id, user1_id]
     end
 
-    BattleState.say(msg)
+    BattleState.set({
+      type: "1v1",
+      participants: [user1_id, user2_id],
+      turn_order: turn_order,
+      current_turn: turn_order[0],
+      last_action_time: Time.now
+    })
 
-    check_ending(defender)
-    BattleState.next_turn
-    
-    next_player = BattleState.get_turn
-    if next_player && next_player.include?("허수아비")
-      scarecrow_ai_action(next_player)
-    end
+    user1_name = user1["이름"] || user1_id
+    user2_name = user2["이름"] || user2_id
+    message = "전투 시작: #{user1_name} vs #{user2_name}\n"
+    message += "선공: #{turn_order[0] == user1_id ? user1_name : user2_name}"
+
+    @mastodon_client.post(message, visibility: 'public')
+    [user1_id, user2_id].each { |p_id| @mastodon_client.dm(p_id, message) }
   end
 
-  def defend(user)
-    unless BattleState.is_current_turn?(user)
-      BattleState.say("#{user}님의 턴이 아닙니다.")
+  def start_2v2(user1_id, user2_id, user3_id, user4_id, reply_id)
+    users = [user1_id, user2_id, user3_id, user4_id].map { |id| @sheet_manager.find_user(id) }
+
+    if users.any?(&:nil?)
+      @mastodon_client.reply(reply_id, "참가자 중 등록되지 않은 사용자가 있습니다.", visibility: 'public')
       return
     end
 
-    BattleState.cancel_turn_timer
-
-    msg = "#{user}이(가) 방어 자세를 취합니다. 다음 턴으로 넘어갑니다."
-    BattleState.say(msg)
-    BattleState.next_turn
-    
-    next_player = BattleState.get_turn
-    if next_player && next_player.include?("허수아비")
-      scarecrow_ai_action(next_player)
+    agility_rolls = users.map.with_index do |user, idx|
+      agi = (user["민첩"] || 10).to_i + rand(1..20)
+      [idx, agi]
     end
+
+    turn_order_indices = agility_rolls.sort_by { |_, agi| -agi }.map { |idx, _| idx }
+    turn_order = turn_order_indices.map { |idx| [user1_id, user2_id, user3_id, user4_id][idx] }
+
+    BattleState.set({
+      type: "2v2",
+      participants: [user1_id, user2_id, user3_id, user4_id],
+      teams: {
+        team1: [user1_id, user2_id],
+        team2: [user3_id, user4_id]
+      },
+      turn_order: turn_order,
+      current_turn: turn_order[0],
+      last_action_time: Time.now
+    })
+
+    names = users.map { |u| u["이름"] || u["ID"] }
+    message = "2:2 전투 시작\n"
+    message += "팀1: #{names[0]}, #{names[1]}\n"
+    message += "팀2: #{names[2]}, #{names[3]}\n"
+    message += "턴 순서: #{turn_order.map { |id| @sheet_manager.find_user(id)["이름"] || id }.join(' → ')}"
+
+    @mastodon_client.post(message, visibility: 'public')
+    [user1_id, user2_id, user3_id, user4_id].each { |p_id| @mastodon_client.dm(p_id, message) }
   end
 
-  def counter(user)
-    unless BattleState.is_current_turn?(user)
-      BattleState.say("#{user}님의 턴이 아닙니다.")
+  def start_dummy_battle(user_id, difficulty, reply_id)
+    user = @sheet_manager.find_user(user_id)
+    unless user
+      @mastodon_client.reply(reply_id, "등록되지 않은 사용자입니다.", visibility: 'public')
       return
     end
 
-    BattleState.cancel_turn_timer
+    dummy_id = "허수아비_#{difficulty}"
+    user_agi = (user["민첩"] || 10).to_i + rand(1..20)
+    dummy_agi = DUMMY_STATS[difficulty][:agi] + rand(1..20)
 
-    attacker = BattleState.get_opponent(user)
-    
-    counter_stat = get_stat_value(user, "공격력")
-    def_stat = get_stat_value(attacker, "방어력")
-    
-    counter = counter_stat + rand(1..20)
-    def_val = def_stat + rand(1..20)
+    turn_order = user_agi >= dummy_agi ? [user_id, dummy_id] : [dummy_id, user_id]
 
-    dmg = [counter - def_val, 0].max
-    
-    if attacker.include?("허수아비")
-      current_hp = @@scarecrow_stats[attacker]["체력"]
-      new_hp = current_hp - dmg
-      @@scarecrow_stats[attacker]["체력"] = new_hp
-      
-      msg = "#{user}의 반격! #{attacker}에게 #{dmg} 피해를 입혔습니다.\n"
-      msg += "#{user}의 반격 #{counter}, #{attacker}의 방어 #{def_val}\n"
-      
-      user_hp = get_stat_value(user, "체력")
-      msg += "남은 체력 - #{attacker}: #{new_hp} / #{user}: #{user_hp}"
-    else
-      hp_stat = @@sheet_manager.get_stat(attacker, "체력")
-      current_hp = hp_stat ? hp_stat.to_i : 100
-      new_hp = current_hp - dmg
-      
-      @@sheet_manager.set_stat(attacker, "체력", new_hp)
+    BattleState.set({
+      type: "dummy",
+      difficulty: difficulty,
+      participants: [user_id, dummy_id],
+      turn_order: turn_order,
+      current_turn: turn_order[0],
+      dummy_hp: DUMMY_STATS[difficulty][:hp],
+      last_action_time: Time.now
+    })
 
-      msg = "#{user}의 반격! #{attacker}에게 #{dmg} 피해를 입혔습니다.\n"
-      msg += "#{user}의 반격 #{counter}, #{attacker}의 방어 #{def_val}\n"
-      
-      user_hp = get_stat_value(user, "체력")
-      msg += "남은 체력 - #{attacker}: #{new_hp} / #{user}: #{user_hp}"
-    end
+    user_name = user["이름"] || user_id
+    message = "허수아비(#{difficulty}) 전투 시작\n"
+    message += "선공: #{turn_order[0] == user_id ? user_name : '허수아비'}"
 
-    BattleState.say(msg)
+    @mastodon_client.post(message, visibility: 'public')
+    @mastodon_client.dm(user_id, message)
 
-    check_ending(attacker)
-    BattleState.next_turn
-    
-    next_player = BattleState.get_turn
-    if next_player && next_player.include?("허수아비")
-      scarecrow_ai_action(next_player)
+    if turn_order[0] == dummy_id
+      sleep(2)
+      dummy_turn
     end
   end
 
-  def escape(user)
-    unless BattleState.is_current_turn?(user)
-      BattleState.say("#{user}님의 턴이 아닙니다.")
-      return
-    end
+  def attack(user_id)
+    state = BattleState.get
+    return unless state[:current_turn] == user_id
 
-    BattleState.cancel_turn_timer
+    attacker = @sheet_manager.find_user(user_id)
+    atk = (attacker["공격력"] || 10).to_i
+    atk_roll = rand(1..20)
+    atk_total = atk + atk_roll
 
-    opp = BattleState.get_opponent(user)
-    
-    luck_stat = @@sheet_manager.get_stat(user, "행운")
-    agi_stat = @@sheet_manager.get_stat(user, "민첩")
-    
-    luck = luck_stat ? luck_stat.to_i : 3
-    agi = agi_stat ? agi_stat.to_i : 3
-    opp_agi = get_stat_value(opp, "민첩")
-    
-    esc_val = luck + agi + rand(1..20)
-    block_val = opp_agi + rand(1..20)
+    attacker_name = attacker["이름"] || user_id
 
-    if esc_val > block_val
-      msg = "#{user}의 도주 성공! 전투를 종료합니다."
-      BattleState.say(msg)
-      BattleState.end
-    else
-      msg = "#{user}의 도주 실패! 전투는 계속됩니다."
-      BattleState.say(msg)
+    if state[:type] == "dummy"
+      difficulty = state[:difficulty]
+      def_stat = DUMMY_STATS[difficulty][:def]
+      def_roll = rand(1..20)
+      def_total = def_stat + def_roll
+
+      damage = [atk_total - def_total, 0].max
+      state[:dummy_hp] -= damage
+
+      message = "#{attacker_name}의 공격 (#{atk_roll}+#{atk}) vs 허수아비 방어 (#{def_roll}+#{def_stat})\n"
+      message += "데미지: #{damage}, 허수아비 체력: #{state[:dummy_hp]}"
+
+      @mastodon_client.post(message, visibility: 'public')
+      @mastodon_client.dm(user_id, message)
+
+      if state[:dummy_hp] <= 0
+        end_message = "허수아비를 격파했습니다!"
+        @mastodon_client.post(end_message, visibility: 'public')
+        @mastodon_client.dm(user_id, end_message)
+        BattleState.clear
+        return
+      end
+
       BattleState.next_turn
-      
-      next_player = BattleState.get_turn
-      if next_player && next_player.include?("허수아비")
-        scarecrow_ai_action(next_player)
+      sleep(2)
+      dummy_turn
+    else
+      defender_id = find_opponent(user_id, state)
+      defender = @sheet_manager.find_user(defender_id)
+      def_stat = (defender["방어력"] || 10).to_i
+      def_roll = rand(1..20)
+      def_total = def_stat + def_roll
+
+      damage = [atk_total - def_total, 0].max
+      current_hp = (defender["체력"] || 100).to_i
+      new_hp = [current_hp - damage, 0].max
+
+      @sheet_manager.update_stat(defender_id, "체력", new_hp)
+
+      defender_name = defender["이름"] || defender_id
+      message = "#{attacker_name}의 공격 (#{atk_roll}+#{atk}) vs #{defender_name}의 방어 (#{def_roll}+#{def_stat})\n"
+      message += "데미지: #{damage}, #{defender_name} 체력: #{new_hp}"
+
+      @mastodon_client.post(message, visibility: 'public')
+      state[:participants].each do |p_id|
+        next if p_id.include?("허수아비")
+        @mastodon_client.dm(p_id, message)
+      end
+
+      if new_hp <= 0
+        end_message = "#{defender_name}이(가) 쓰러졌습니다! #{attacker_name} 승리!"
+        @mastodon_client.post(end_message, visibility: 'public')
+        state[:participants].each do |p_id|
+          next if p_id.include?("허수아비")
+          @mastodon_client.dm(p_id, end_message)
+        end
+        BattleState.clear
+        return
+      end
+
+      BattleState.next_turn
+    end
+  end
+
+  def defend(user_id)
+    state = BattleState.get
+    return unless state[:current_turn] == user_id
+
+    user = @sheet_manager.find_user(user_id)
+    user_name = user["이름"] || user_id
+
+    message = "#{user_name}이(가) 방어 자세를 취했습니다."
+    @mastodon_client.post(message, visibility: 'public')
+    state[:participants].each do |p_id|
+      next if p_id.include?("허수아비")
+      @mastodon_client.dm(p_id, message)
+    end
+
+    BattleState.next_turn
+
+    if state[:type] == "dummy" && state[:current_turn].include?("허수아비")
+      sleep(2)
+      dummy_turn
+    end
+  end
+
+  def counter(user_id)
+    state = BattleState.get
+    return unless state[:current_turn] == user_id
+
+    attacker = @sheet_manager.find_user(user_id)
+    atk = (attacker["공격력"] || 10).to_i
+    atk_roll = rand(1..20)
+    atk_total = atk + atk_roll
+
+    attacker_name = attacker["이름"] || user_id
+
+    if state[:type] == "dummy"
+      difficulty = state[:difficulty]
+      def_stat = DUMMY_STATS[difficulty][:def]
+      def_roll = rand(1..20)
+      def_total = def_stat + def_roll
+
+      damage = [atk_total - def_total, 0].max
+      state[:dummy_hp] -= damage
+
+      message = "#{attacker_name}의 반격 (#{atk_roll}+#{atk}) vs 허수아비 방어 (#{def_roll}+#{def_stat})\n"
+      message += "데미지: #{damage}, 허수아비 체력: #{state[:dummy_hp]}"
+
+      @mastodon_client.post(message, visibility: 'public')
+      @mastodon_client.dm(user_id, message)
+
+      if state[:dummy_hp] <= 0
+        end_message = "허수아비를 격파했습니다!"
+        @mastodon_client.post(end_message, visibility: 'public')
+        @mastodon_client.dm(user_id, end_message)
+        BattleState.clear
+        return
+      end
+
+      BattleState.next_turn
+      sleep(2)
+      dummy_turn
+    else
+      defender_id = find_opponent(user_id, state)
+      defender = @sheet_manager.find_user(defender_id)
+      def_stat = (defender["방어력"] || 10).to_i
+      def_roll = rand(1..20)
+      def_total = def_stat + def_roll
+
+      damage = [atk_total - def_total, 0].max
+      current_hp = (defender["체력"] || 100).to_i
+      new_hp = [current_hp - damage, 0].max
+
+      @sheet_manager.update_stat(defender_id, "체력", new_hp)
+
+      defender_name = defender["이름"] || defender_id
+      message = "#{attacker_name}의 반격 (#{atk_roll}+#{atk}) vs #{defender_name}의 방어 (#{def_roll}+#{def_stat})\n"
+      message += "데미지: #{damage}, #{defender_name} 체력: #{new_hp}"
+
+      @mastodon_client.post(message, visibility: 'public')
+      state[:participants].each do |p_id|
+        next if p_id.include?("허수아비")
+        @mastodon_client.dm(p_id, message)
+      end
+
+      if new_hp <= 0
+        end_message = "#{defender_name}이(가) 쓰러졌습니다! #{attacker_name} 승리!"
+        @mastodon_client.post(end_message, visibility: 'public')
+        state[:participants].each do |p_id|
+          next if p_id.include?("허수아비")
+          @mastodon_client.dm(p_id, end_message)
+        end
+        BattleState.clear
+        return
+      end
+
+      BattleState.next_turn
+    end
+  end
+
+  def flee(user_id)
+    state = BattleState.get
+    return unless state[:current_turn] == user_id
+
+    user = @sheet_manager.find_user(user_id)
+    luck = (user["행운"] || 10).to_i
+    agi = (user["민첩"] || 10).to_i
+    flee_roll = rand(1..20)
+    flee_total = luck + agi + flee_roll
+
+    user_name = user["이름"] || user_id
+
+    if state[:type] == "dummy"
+      difficulty = state[:difficulty]
+      chase_agi = DUMMY_STATS[difficulty][:agi]
+      chase_roll = rand(1..20)
+      chase_total = chase_agi + chase_roll
+
+      if flee_total >= chase_total
+        message = "#{user_name}의 도주 성공 (#{flee_roll}+#{luck}+#{agi} vs #{chase_roll}+#{chase_agi})"
+        @mastodon_client.post(message, visibility: 'public')
+        @mastodon_client.dm(user_id, message)
+        BattleState.clear
+      else
+        message = "#{user_name}의 도주 실패 (#{flee_roll}+#{luck}+#{agi} vs #{chase_roll}+#{chase_agi})"
+        @mastodon_client.post(message, visibility: 'public')
+        @mastodon_client.dm(user_id, message)
+        BattleState.next_turn
+        sleep(2)
+        dummy_turn
+      end
+    else
+      opponent_id = find_opponent(user_id, state)
+      opponent = @sheet_manager.find_user(opponent_id)
+      chase_agi = (opponent["민첩"] || 10).to_i
+      chase_roll = rand(1..20)
+      chase_total = chase_agi + chase_roll
+
+      opponent_name = opponent["이름"] || opponent_id
+
+      if flee_total >= chase_total
+        message = "#{user_name}의 도주 성공 (#{flee_roll}+#{luck}+#{agi} vs #{chase_roll}+#{chase_agi})\n전투 종료!"
+        @mastodon_client.post(message, visibility: 'public')
+        state[:participants].each do |p_id|
+          next if p_id.include?("허수아비")
+          @mastodon_client.dm(p_id, message)
+        end
+        BattleState.clear
+      else
+        message = "#{user_name}의 도주 실패 (#{flee_roll}+#{luck}+#{agi} vs #{chase_roll}+#{chase_agi})"
+        @mastodon_client.post(message, visibility: 'public')
+        state[:participants].each do |p_id|
+          next if p_id.include?("허수아비")
+          @mastodon_client.dm(p_id, message)
+        end
+        BattleState.next_turn
       end
     end
   end
 
-  def use_potion(user)
-    unless BattleState.is_current_turn?(user)
-      BattleState.say("#{user}님의 턴이 아닙니다.")
-      return
+  private
+
+  def dummy_turn
+    state = BattleState.get
+    return unless state[:current_turn].include?("허수아비")
+
+    difficulty = state[:difficulty]
+    user_id = state[:participants].find { |p| !p.include?("허수아비") }
+    user = @sheet_manager.find_user(user_id)
+    user_name = user["이름"] || user_id
+
+    action_weights = case difficulty
+    when "하"
+      { attack: 70, defend: 20, potion: 10 }
+    when "중"
+      { attack: 60, defend: 25, counter: 10, potion: 5 }
+    when "상"
+      { attack: 50, defend: 20, counter: 25, potion: 5 }
     end
 
-    BattleState.cancel_turn_timer
-
-    amount = [5, 10, 15, 20].sample
-    
-    if user.include?("허수아비")
-      current_hp = @@scarecrow_stats[user]["체력"]
-      new_hp = [current_hp + amount, 100].min
-      @@scarecrow_stats[user]["체력"] = new_hp
+    rand_val = rand(1..100)
+    action = if rand_val <= action_weights[:attack]
+      :attack
+    elsif rand_val <= action_weights[:attack] + action_weights[:defend]
+      :defend
+    elsif action_weights[:counter] && rand_val <= action_weights[:attack] + action_weights[:defend] + action_weights[:counter]
+      :counter
     else
-      hp_stat = @@sheet_manager.get_stat(user, "체력")
-      cur_hp = hp_stat ? hp_stat.to_i : 100
-      new_hp = [cur_hp + amount, 100].min
-      @@sheet_manager.set_stat(user, "체력", new_hp)
-    end
-    
-    msg = "#{user}의 체력이 #{amount} 회복되었습니다. 현재 체력 #{new_hp}"
-    BattleState.say(msg)
-    BattleState.next_turn
-    
-    next_player = BattleState.get_turn
-    if next_player && next_player.include?("허수아비")
-      scarecrow_ai_action(next_player)
-    end
-  end
-
-  def check_ending(defender)
-    hp = if defender.include?("허수아비")
-      @@scarecrow_stats[defender]["체력"]
-    else
-      hp_stat = @@sheet_manager.get_stat(defender, "체력")
-      hp_stat ? hp_stat.to_i : 100
+      :potion
     end
 
-    if hp <= 0
-      msg = "#{defender}의 체력이 0이 되었습니다. 전투 종료!"
-      BattleState.say(msg)
-      BattleState.end
+    case action
+    when :attack
+      atk = DUMMY_STATS[difficulty][:atk]
+      atk_roll = rand(1..20)
+      atk_total = atk + atk_roll
+
+      def_stat = (user["방어력"] || 10).to_i
+      def_roll = rand(1..20)
+      def_total = def_stat + def_roll
+
+      damage = [atk_total - def_total, 0].max
+      current_hp = (user["체력"] || 100).to_i
+      new_hp = [current_hp - damage, 0].max
+
+      @sheet_manager.update_stat(user_id, "체력", new_hp)
+
+      message = "허수아비의 공격 (#{atk_roll}+#{atk}) vs #{user_name}의 방어 (#{def_roll}+#{def_stat})\n"
+      message += "데미지: #{damage}, #{user_name} 체력: #{new_hp}"
+
+      @mastodon_client.post(message, visibility: 'public')
+      @mastodon_client.dm(user_id, message)
+
+      if new_hp <= 0
+        end_message = "#{user_name}이(가) 쓰러졌습니다! 허수아비 승리!"
+        @mastodon_client.post(end_message, visibility: 'public')
+        @mastodon_client.dm(user_id, end_message)
+        BattleState.clear
+        return
+      end
+
+    when :defend
+      message = "허수아비가 방어 자세를 취했습니다."
+      @mastodon_client.post(message, visibility: 'public')
+      @mastodon_client.dm(user_id, message)
+
+    when :counter
+      atk = DUMMY_STATS[difficulty][:atk]
+      atk_roll = rand(1..20)
+      atk_total = atk + atk_roll
+
+      def_stat = (user["방어력"] || 10).to_i
+      def_roll = rand(1..20)
+      def_total = def_stat + def_roll
+
+      damage = [atk_total - def_total, 0].max
+      current_hp = (user["체력"] || 100).to_i
+      new_hp = [current_hp - damage, 0].max
+
+      @sheet_manager.update_stat(user_id, "체력", new_hp)
+
+      message = "허수아비의 반격 (#{atk_roll}+#{atk}) vs #{user_name}의 방어 (#{def_roll}+#{def_stat})\n"
+      message += "데미지: #{damage}, #{user_name} 체력: #{new_hp}"
+
+      @mastodon_client.post(message, visibility: 'public')
+      @mastodon_client.dm(user_id, message)
+
+      if new_hp <= 0
+        end_message = "#{user_name}이(가) 쓰러졌습니다! 허수아비 승리!"
+        @mastodon_client.post(end_message, visibility: 'public')
+        @mastodon_client.dm(user_id, end_message)
+        BattleState.clear
+        return
+      end
+
+    when :potion
+      heal_amount = [5, 10, 15, 20].sample
+      state[:dummy_hp] = [state[:dummy_hp] + heal_amount, DUMMY_STATS[difficulty][:hp]].min
+
+      message = "허수아비가 물약을 사용했습니다. (회복량: #{heal_amount}, 현재 체력: #{state[:dummy_hp]})"
+      @mastodon_client.post(message, visibility: 'public')
+      @mastodon_client.dm(user_id, message)
     end
-  end
 
-  def scarecrow_ai_action(scarecrow_id)
-    actions = [:ai_attack, :ai_defend, :ai_counter, :ai_use_potion]
-    selected = actions.sample
-    
-    send(selected, scarecrow_id)
-  end
-
-  def ai_attack(scarecrow_id)
-    defender = BattleState.get_opponent(scarecrow_id)
-    
-    atk_stat = get_stat_value(scarecrow_id, "공격력")
-    def_stat = get_stat_value(defender, "방어력")
-    
-    atk = atk_stat + rand(1..20)
-    def_val = def_stat + rand(1..20)
-
-    dmg = [atk - def_val, 0].max
-    
-    hp_stat = @@sheet_manager.get_stat(defender, "체력")
-    current_hp = hp_stat ? hp_stat.to_i : 100
-    new_hp = current_hp - dmg
-    
-    @@sheet_manager.set_stat(defender, "체력", new_hp)
-
-    msg = "#{scarecrow_id}의 공격! #{defender}에게 #{dmg} 피해를 입혔습니다.\n"
-    msg += "#{scarecrow_id}의 공격 : #{atk}, #{defender}의 방어 #{def_val}\n"
-    
-    scarecrow_hp = @@scarecrow_stats[scarecrow_id]["체력"]
-    msg += "남은 체력 - #{scarecrow_id}: #{scarecrow_hp} / #{defender}: #{new_hp}"
-
-    BattleState.say(msg)
-
-    check_ending(defender)
     BattleState.next_turn
   end
 
-  def ai_defend(scarecrow_id)
-    msg = "#{scarecrow_id}이(가) 방어 자세를 취합니다. 다음 턴으로 넘어갑니다."
-    BattleState.say(msg)
-    BattleState.next_turn
-  end
-
-  def ai_counter(scarecrow_id)
-    attacker = BattleState.get_opponent(scarecrow_id)
-    
-    counter_stat = get_stat_value(scarecrow_id, "공격력")
-    def_stat = get_stat_value(attacker, "방어력")
-    
-    counter = counter_stat + rand(1..20)
-    def_val = def_stat + rand(1..20)
-
-    dmg = [counter - def_val, 0].max
-    
-    hp_stat = @@sheet_manager.get_stat(attacker, "체력")
-    current_hp = hp_stat ? hp_stat.to_i : 100
-    new_hp = current_hp - dmg
-    
-    @@sheet_manager.set_stat(attacker, "체력", new_hp)
-
-    msg = "#{scarecrow_id}의 반격! #{attacker}에게 #{dmg} 피해를 입혔습니다.\n"
-    msg += "#{scarecrow_id}의 반격 #{counter}, #{attacker}의 방어 #{def_val}\n"
-    
-    scarecrow_hp = @@scarecrow_stats[scarecrow_id]["체력"]
-    msg += "남은 체력 - #{attacker}: #{new_hp} / #{scarecrow_id}: #{scarecrow_hp}"
-
-    BattleState.say(msg)
-
-    check_ending(attacker)
-    BattleState.next_turn
-  end
-
-  def ai_use_potion(scarecrow_id)
-    amount = [5, 10, 15, 20].sample
-    current_hp = @@scarecrow_stats[scarecrow_id]["체력"]
-    new_hp = [current_hp + amount, 100].min
-    @@scarecrow_stats[scarecrow_id]["체력"] = new_hp
-    
-    msg = "#{scarecrow_id}의 체력이 #{amount} 회복되었습니다. 현재 체력 #{new_hp}"
-    BattleState.say(msg)
-    BattleState.next_turn
+  def find_opponent(user_id, state)
+    if state[:type] == "1v1"
+      state[:participants].find { |p| p != user_id }
+    elsif state[:type] == "2v2"
+      my_team = state[:teams][:team1].include?(user_id) ? :team1 : :team2
+      enemy_team = my_team == :team1 ? :team2 : :team1
+      alive_enemies = state[:teams][enemy_team].select do |p_id|
+        user = @sheet_manager.find_user(p_id)
+        user && (user["체력"] || 100).to_i > 0
+      end
+      alive_enemies.sample
+    end
   end
 end

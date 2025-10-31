@@ -1,142 +1,114 @@
-# mastodon_client.rb
-require 'mastodon'
-require 'uri'
+require 'net/http'
 require 'json'
-require 'dotenv'
-Dotenv.load('.env')
+require 'uri'
 
 class MastodonClient
-  def initialize(base_url:, token:)
+  def initialize(base_url, access_token)
     @base_url = base_url
-    @token = token
-    @client = Mastodon::REST::Client.new(
-      base_url: base_url,
-      bearer_token: token
-    )
-    
-    @streamer = nil
+    @access_token = access_token
   end
 
-  def get_streamer
-    @streamer ||= Mastodon::Streaming::Client.new(
-      base_url: @base_url,
-      bearer_token: @token
-    )
+  def notifications(since_id: nil, limit: 40)
+    uri = URI("#{@base_url}/api/v1/notifications")
+    params = { limit: limit }
+    params[:since_id] = since_id if since_id
+    uri.query = URI.encode_www_form(params)
+
+    http = Net::HTTP.new(uri.host, uri.port)
+    http.use_ssl = (uri.scheme == 'https')
+
+    request = Net::HTTP::Get.new(uri.request_uri)
+    request['Authorization'] = "Bearer #{@access_token}"
+
+    response = http.request(request)
+    JSON.parse(response.body)
   rescue => e
-    puts "[경고] 스트리밍 클라이언트 초기화 실패: #{e.message}"
+    puts "Error fetching notifications: #{e.message}"
+    []
+  end
+
+  def reply(status_id, message, visibility: 'public')
+    uri = URI("#{@base_url}/api/v1/statuses")
+    http = Net::HTTP.new(uri.host, uri.port)
+    http.use_ssl = (uri.scheme == 'https')
+
+    request = Net::HTTP::Post.new(uri.path)
+    request['Authorization'] = "Bearer #{@access_token}"
+    request['Content-Type'] = 'application/json'
+
+    body = {
+      status: message,
+      in_reply_to_id: status_id,
+      visibility: visibility
+    }
+    request.body = body.to_json
+
+    response = http.request(request)
+    JSON.parse(response.body)
+  rescue => e
+    puts "Error replying: #{e.message}"
     nil
   end
 
-  def stream_user(&block)
-    puts "[마스토돈] 멘션 스트리밍 시작..."
-    streamer = get_streamer
-    return unless streamer
-    
-    streamer.user do |event|
-      if event.is_a?(Mastodon::Notification) && event.type == 'mention'
-        block.call(event)
-      end
-    end
+  def post(message, visibility: 'public')
+    uri = URI("#{@base_url}/api/v1/statuses")
+    http = Net::HTTP.new(uri.host, uri.port)
+    http.use_ssl = (uri.scheme == 'https')
+
+    request = Net::HTTP::Post.new(uri.path)
+    request['Authorization'] = "Bearer #{@access_token}"
+    request['Content-Type'] = 'application/json'
+
+    body = {
+      status: message,
+      visibility: visibility
+    }
+    request.body = body.to_json
+
+    response = http.request(request)
+    JSON.parse(response.body)
   rescue => e
-    puts "[에러] 스트리밍 중단됨: #{e.message}"
-    sleep 5
-    retry
+    puts "Error posting: #{e.message}"
+    nil
   end
 
-  # 통합 reply 메서드 (status 객체 또는 문자열 모두 처리 가능)
-  def reply(to_status_or_acct, message, in_reply_to_id: nil)
-    begin
-      # status 객체인 경우
-      if to_status_or_acct.respond_to?(:account)
-        acct = to_status_or_acct.account.acct
-        reply_to_id = in_reply_to_id || to_status_or_acct.id
-      # 문자열(acct)인 경우
-      else
-        acct = to_status_or_acct
-        reply_to_id = in_reply_to_id
-      end
-      
-      puts "[마스토돈] → @#{acct} 에게 응답 전송"
-      status_text = "@#{acct} #{message}".dup
-      
-      response = @client.create_status(
-        status_text,
-        {
-          in_reply_to_id: reply_to_id,
-          visibility: 'public'
-        }
-      )
-      puts "답장 전송 완료: #{message[0..50]}..."
-      response
-    rescue => e
-      puts "[에러] 응답 전송 실패: #{e.message}"
-      puts e.backtrace.first(3)
-      nil
-    end
+  def dm(user_id, message)
+    uri = URI("#{@base_url}/api/v1/statuses")
+    http = Net::HTTP.new(uri.host, uri.port)
+    http.use_ssl = (uri.scheme == 'https')
+
+    request = Net::HTTP::Post.new(uri.path)
+    request['Authorization'] = "Bearer #{@access_token}"
+    request['Content-Type'] = 'application/json'
+
+    body = {
+      status: "#{user_id} #{message}",
+      visibility: 'direct'
+    }
+    request.body = body.to_json
+
+    response = http.request(request)
+    JSON.parse(response.body)
+  rescue => e
+    puts "Error sending DM: #{e.message}"
+    nil
   end
 
-  def broadcast(message)
-    begin
-      puts "[마스토돈] → 전체 공지 전송"
-      @client.create_status(
-        message,
-        visibility: 'public'
-      )
-    rescue => e
-      puts "[에러] 공지 전송 실패: #{e.message}"
-    end
-  end
+  def account_search(query)
+    uri = URI("#{@base_url}/api/v1/accounts/search")
+    params = { q: query, limit: 5 }
+    uri.query = URI.encode_www_form(params)
 
-  def say(message)
-    begin
-      puts "[마스토돈] → 일반 포스트 전송"
-      @client.create_status(
-        message,
-        visibility: 'public'
-      )
-    rescue => e
-      puts "[에러] 포스트 전송 실패: #{e.message}"
-    end
-  end
+    http = Net::HTTP.new(uri.host, uri.port)
+    http.use_ssl = (uri.scheme == 'https')
 
-  def dm(to_acct, message)
-    begin
-      puts "[마스토돈] → @#{to_acct} DM 전송"
-      status_text = "@#{to_acct} #{message}".dup
-      @client.create_status(
-        status_text,
-        visibility: 'direct'
-      )
-    rescue => e
-      puts "[에러] DM 전송 실패: #{e.message}"
-    end
-  end
+    request = Net::HTTP::Get.new(uri.request_uri)
+    request['Authorization'] = "Bearer #{@access_token}"
 
-  def me
-    @client.verify_credentials.acct
-  end
-
-  def self.validate_environment
-    base_url = ENV['MASTODON_BASE_URL']
-    token = ENV['MASTODON_TOKEN']
-    
-    missing_vars = []
-    missing_vars << 'MASTODON_BASE_URL' if base_url.nil? || base_url.empty?
-    missing_vars << 'MASTODON_TOKEN' if token.nil? || token.empty?
-    
-    if missing_vars.any?
-      puts "필수 환경변수 누락: #{missing_vars.join(', ')}"
-      puts ".env 파일을 확인해주세요."
-      return false
-    end
-    
-    true
-  end
-
-  def self.client
-    @instance ||= new(
-      base_url: ENV['MASTODON_BASE_URL'],
-      token: ENV['MASTODON_TOKEN']
-    )
+    response = http.request(request)
+    JSON.parse(response.body)
+  rescue => e
+    puts "Error searching accounts: #{e.message}"
+    []
   end
 end

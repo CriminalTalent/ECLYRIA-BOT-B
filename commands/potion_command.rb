@@ -1,4 +1,4 @@
-# commands/potion_command.rb
+require_relative '../core/battle_state'
 
 class PotionCommand
   def initialize(mastodon_client, sheet_manager)
@@ -6,39 +6,50 @@ class PotionCommand
     @sheet_manager = sheet_manager
   end
 
-  def handle(status)
-    sender_full = status.account.acct
-    sender = sender_full.split('@').first
-    in_reply_to_id = status.id
+  def use_potion(user_id, reply_id)
+    unless BattleState.active?
+      @mastodon_client.reply(reply_id, "전투 중에만 물약을 사용할 수 있습니다.", visibility: 'direct')
+      return
+    end
+
+    state = BattleState.get
+    unless state[:current_turn] == user_id
+      @mastodon_client.reply(reply_id, "당신의 턴이 아닙니다.", visibility: 'direct')
+      return
+    end
+
+    user = @sheet_manager.find_user(user_id)
+    items = user["아이템"] || ""
     
-    inventory = @sheet_manager.get_stat(sender, "아이템")
-    return unless inventory
-
-    potion_line = inventory.split(',').find { |i| i.include?("물약") }
-    unless potion_line
-      @mastodon_client.reply(sender, "물약을 가지고 있지 않습니다.", in_reply_to_id: in_reply_to_id)
+    unless items.include?("포션")
+      message = "포션이 없습니다."
+      @mastodon_client.post(message, visibility: 'public')
+      BattleState.get[:participants].each do |p_id|
+        next if p_id.include?("허수아비")
+        @mastodon_client.dm(p_id, message)
+      end
       return
     end
 
-    count = potion_line.match(/물약:?(\d+)/)&.[](1)&.to_i || 0
-    if count <= 0
-      @mastodon_client.reply(sender, "물약이 없습니다.", in_reply_to_id: in_reply_to_id)
-      return
+    heal_amount = [5, 10, 15, 20].sample
+    current_hp = user["체력"].to_i
+    new_hp = [current_hp + heal_amount, 100].min
+    
+    @sheet_manager.update_stat(user_id, "체력", new_hp)
+    
+    new_items = items.sub("포션", "").strip
+    @sheet_manager.update_stat(user_id, "아이템", new_items)
+    
+    user_name = user["이름"] || user_id
+    message = "#{user_name}이(가) 물약을 사용했습니다. (회복량: #{heal_amount}, 현재 체력: #{new_hp})"
+    
+    @mastodon_client.post(message, visibility: 'public')
+    
+    BattleState.get[:participants].each do |p_id|
+      next if p_id.include?("허수아비")
+      @mastodon_client.dm(p_id, message)
     end
-
-    # 랜덤 회복량
-    amount = [5, 10, 15, 20].sample
-    hp_str = @sheet_manager.get_stat(sender, "체력")
-    hp = hp_str ? hp_str.to_i : 100
-    new_hp = [hp + amount, 100].min
-
-    @sheet_manager.set_stat(sender, "체력", new_hp)
-
-    # 포션 차감
-    new_inventory = inventory.gsub(/물약:?\d*/) { "물약:#{count - 1}" }
-    @sheet_manager.set_stat(sender, "아이템", new_inventory)
-
-    message = "#{sender}의 체력이 #{amount} 회복되었습니다. 현재 체력 #{new_hp}"
-    @mastodon_client.say(message)
+    
+    BattleState.next_turn
   end
 end

@@ -1,4 +1,3 @@
-# commands/battle_command.rb
 require_relative '../core/battle_engine'
 require_relative '../core/battle_state'
 
@@ -6,87 +5,60 @@ class BattleCommand
   def initialize(mastodon_client, sheet_manager)
     @mastodon_client = mastodon_client
     @sheet_manager = sheet_manager
-    
-    BattleState.set_mastodon_client(@mastodon_client)
-    BattleEngine.set_sheet_manager(@sheet_manager)
+    @battle_engine = BattleEngine.new(mastodon_client, sheet_manager)
   end
 
-  def handle(status)
-    content = status.content.gsub(/<[^>]+>/, '').strip
-    sender_full = status.account.acct
-    sender = sender_full.split('@').first
-    display_name = status.account.display_name || sender
-    in_reply_to_id = status.id
-    
-    # DM인지 타임라인인지 확인
-    context = status.visibility == 'direct' ? 'dm' : 'timeline'
+  def start_battle(text, user_id, reply_id)
+    if BattleState.active?
+      @mastodon_client.reply(reply_id, "이미 진행 중인 전투가 있습니다.", visibility: 'public')
+      return
+    end
 
-    case content
-    when /\[전투개시\/@?(\w+)\/@?(\w+)\/@?(\w+)\]/
-      teammate = $1
-      opponent1 = $2  
-      opponent2 = $3
-      start_team_battle(sender, teammate, opponent1, opponent2, in_reply_to_id, context)
-    when /\[전투개시\/@?(\w+)\]/
-      opponent = $1
-      start_1v1_battle(sender, opponent, in_reply_to_id, context)
-    when /\[허수아비\s+(상|중|하)\]/
-      difficulty = $1
-      start_scarecrow_battle(sender, difficulty, in_reply_to_id, context)
-    when /공격/
-      BattleEngine.attack(sender)
-    when /방어/
-      BattleEngine.defend(sender)
-    when /반격/
-      BattleEngine.counter(sender)
-    when /도주/
-      BattleEngine.escape(sender)
-    when /물약사용/
-      BattleEngine.use_potion(sender)
+    mentions = text.scan(/@([^@\s]+@[^\s]+)/).flatten
+    
+    if mentions.length == 1
+      opponent_id = "@#{mentions[0]}"
+      @battle_engine.start_1v1(user_id, opponent_id, reply_id)
+    elsif mentions.length == 3
+      teammate_id = "@#{mentions[0]}"
+      opponent1_id = "@#{mentions[1]}"
+      opponent2_id = "@#{mentions[2]}"
+      @battle_engine.start_2v2(user_id, teammate_id, opponent1_id, opponent2_id, reply_id)
     else
-      return
+      @mastodon_client.reply(reply_id, 
+        "전투 형식이 올바르지 않습니다.\n" +
+        "1:1 전투: [전투개시/@상대방]\n" +
+        "2:2 전투: [전투개시/@우리팀/@상대방1/@상대방2]",
+        visibility: 'public')
     end
   end
 
-  private
-
-  def start_1v1_battle(user_id, opponent_id, reply_id, context)
-    if BattleState.in_battle?(user_id) || BattleState.in_battle?(opponent_id)
-      reply_method = context == 'dm' ? :dm : :reply
-      @mastodon_client.send(reply_method, user_id, "당신 혹은 #{opponent_id}는 이미 전투 중입니다.", in_reply_to_id: reply_id)
+  def start_dummy_battle(text, user_id, reply_id)
+    if BattleState.active?
+      @mastodon_client.reply(reply_id, "이미 진행 중인 전투가 있습니다.", visibility: 'public')
       return
     end
 
-    players = [user_id, opponent_id]
-    BattleEngine.init_1v1(players, context)
-    BattleEngine.roll_initiative(players)
-  end
-
-  def start_team_battle(user_id, teammate, opponent1, opponent2, reply_id, context)
-    team_a = [user_id, teammate]
-    team_b = [opponent1, opponent2]
-    all_players = team_a + team_b
+    match = text.match(/\[허수아비\s+(상|중|하)\]/i)
+    difficulty = match[1]
     
-    if all_players.any? { |p| BattleState.in_battle?(p) }
-      reply_method = context == 'dm' ? :dm : :reply
-      @mastodon_client.send(reply_method, user_id, "참가자 중 이미 전투 중인 유저가 있습니다.", in_reply_to_id: reply_id)
-      return
-    end
-
-    BattleEngine.init_team_battle(team_a, team_b, context)
-    BattleEngine.roll_team_initiative(team_a, team_b)
+    @battle_engine.start_dummy_battle(user_id, difficulty, reply_id)
   end
 
-  def start_scarecrow_battle(user_id, difficulty, reply_id, context)
-    if BattleState.in_battle?(user_id)
-      reply_method = context == 'dm' ? :dm : :reply
-      @mastodon_client.send(reply_method, user_id, "이미 전투 중입니다.", in_reply_to_id: reply_id)
+  def handle_action(text, user_id, reply_id)
+    unless BattleState.active?
+      @mastodon_client.reply(reply_id, "진행 중인 전투가 없습니다.", visibility: 'direct')
       return
     end
 
-    scarecrow_id = "허수아비_#{difficulty}"
-    players = [user_id, scarecrow_id]
-    BattleEngine.init_scarecrow_battle(players, difficulty, context)
-    BattleEngine.roll_initiative(players)
+    if text.match(/\[공격\]/i)
+      @battle_engine.attack(user_id)
+    elsif text.match(/\[방어\]/i)
+      @battle_engine.defend(user_id)
+    elsif text.match(/\[반격\]/i)
+      @battle_engine.counter(user_id)
+    elsif text.match(/\[도주\]/i)
+      @battle_engine.flee(user_id)
+    end
   end
 end

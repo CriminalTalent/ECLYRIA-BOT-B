@@ -1,8 +1,6 @@
-# command_parser.rb
 require_relative 'commands/battle_command'
-require_relative 'commands/potion_command'
 require_relative 'commands/investigate_command'
-require_relative 'commands/enhanced_investigate_command'
+require_relative 'commands/potion_command'
 require_relative 'commands/dm_investigation_command'
 
 class CommandParser
@@ -10,44 +8,33 @@ class CommandParser
     @mastodon_client = mastodon_client
     @sheet_manager = sheet_manager
     
-    # 명령 처리 클래스 초기화
-    @battle = BattleCommand.new(@mastodon_client, @sheet_manager)
-    @potion = PotionCommand.new(@mastodon_client, @sheet_manager)
-    @investigate = InvestigateCommand.new(@mastodon_client, @sheet_manager)
-    @enhanced_investigate = EnhancedInvestigateCommand.new(@mastodon_client, @sheet_manager)
-    @dm = DMInvestigationCommand.new(@mastodon_client, @sheet_manager)
+    @battle_command = BattleCommand.new(mastodon_client, sheet_manager)
+    @investigate_command = InvestigateCommand.new(mastodon_client, sheet_manager)
+    @potion_command = PotionCommand.new(mastodon_client, sheet_manager)
+    @dm_investigation_command = DMInvestigationCommand.new(mastodon_client, sheet_manager)
   end
 
-  def handle(status)
-    content = status.content.gsub(/<[^>]*>/, '').strip
-    sender_full = status.account.acct
+  def parse(text, user_id, reply_id)
+    text = text.strip
     
-    # sender ID 정규화 - 다른 서버 호환성을 위해 도메인 부분 제거
-    # 예: "Store@fortunaefons.masto.host" → "Store"
-    # 예: "professor@eclyria.pics" → "professor"
-    sender = sender_full.split('@').first
-    
-    puts "[전투봇] 처리 중: #{content} (from @#{sender_full} -> #{sender})"
-    
-    # 명령어 라우팅
-    case content
-    when /전투개시|허수아비|공격\/|방어\/|공격|방어|반격|도주/
-      @battle.handle(status)
-    when /물약사용/
-      @potion.handle(status)
-    when /DM조사결과/
-      @dm.handle(status)
-    when /이동\/|위치확인|주변탐색|은신|협력조사\/|방해\/|물건이동\/|숨기기\/|흔적조사\/|조사기록\/|타임라인\//
-      # 고도화된 조사 시스템 명령어들
-      @enhanced_investigate.handle(status)
-    when /조사\/|정밀조사\/|감지\/|훔쳐보기\//
-      # 기존 조사 명령어는 고도화된 시스템으로 처리
-      @enhanced_investigate.handle(status)
-    when /\[조사\]/, /\[정밀조사\]/, /\[감지\]/, /\[훔쳐보기\]/
-      # 대괄호 형식 조사 명령어도 지원
-      @investigate.handle(status)
+    if text.match(/\[전투개시[/@]/i)
+      @battle_command.start_battle(text, user_id, reply_id)
+    elsif text.match(/\[허수아비\s+(상|중|하)\]/i)
+      @battle_command.start_dummy_battle(text, user_id, reply_id)
+    elsif text.match(/\[(공격|방어|반격|도주)\]/i)
+      @battle_command.handle_action(text, user_id, reply_id)
+    elsif text.match(/\[물약사용\]/i)
+      @potion_command.use_potion(user_id, reply_id)
+    elsif text.match(/DM조사결과\s+@(\S+)\s+(.+)/i)
+      @dm_investigation_command.send_result(text, user_id, reply_id)
+    elsif text.match(/\[(조사|정밀조사|감지|훔쳐보기)\]\s*(.+)/i)
+      @investigate_command.investigate(text, user_id, reply_id)
     else
-      puts "[무시] 인식되지 않은 명령어: #{content}"
+      @mastodon_client.reply(reply_id, "알 수 없는 명령어입니다.", visibility: 'direct')
     end
+  rescue => e
+    puts "Parse error: #{e.message}"
+    puts e.backtrace.join("\n")
+    @mastodon_client.reply(reply_id, "명령 처리 중 오류가 발생했습니다.", visibility: 'direct')
   end
 end
