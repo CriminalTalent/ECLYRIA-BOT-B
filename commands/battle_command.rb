@@ -3,6 +3,8 @@ require_relative '../core/battle_engine'
 require_relative '../core/battle_state'
 
 class BattleCommand
+  ADMIN_IDS = ["@ellis@remember.elbarand.pics", "@professor@remember.elbarand.pics"]
+
   def initialize(mastodon_client, sheet_manager)
     @mastodon_client = mastodon_client
     @sheet_manager = sheet_manager
@@ -51,6 +53,22 @@ class BattleCommand
 
   # 전투 중 행동 처리
   def handle_action(text, user_id, reply_id)
+    # 전투 중단 명령
+    if text.match(/\[전투중단\]/i)
+      unless ADMIN_IDS.include?(user_id)
+        @mastodon_client.reply(reply_id, "전투 중단 권한이 없습니다.", visibility: 'direct')
+        return
+      end
+      if BattleState.active?
+        BattleState.reset!
+        @mastodon_client.reply(reply_id, "총괄계 명령으로 전투가 강제 종료되었습니다.", visibility: 'public')
+        puts "[총괄계] #{user_id}가 전투를 중단함"
+      else
+        @mastodon_client.reply(reply_id, "현재 진행 중인 전투가 없습니다.", visibility: 'direct')
+      end
+      return
+    end
+
     unless BattleState.active?
       @mastodon_client.reply(reply_id, "진행 중인 전투가 없습니다.", visibility: 'direct')
       return
@@ -77,10 +95,19 @@ class BattleCommand
     # 전투 로그 출력
     @mastodon_client.reply(reply_id, result, visibility: 'unlisted')
 
+    # HP 상태 표시 (BattleState에 기록된 현재 HP 기준)
+    battle_info = BattleState.current_snapshot
+    if battle_info && battle_info["players"]
+      status_lines = battle_info["players"].map do |p|
+        "#{p['name']} | HP #{p['hp']} / #{p['max_hp']}"
+      end
+      @mastodon_client.reply(reply_id, status_lines.join("\n"), visibility: 'unlisted')
+    end
+
     # 다음 턴 안내
     next_turn_user = BattleState.current_turn_user
     if next_turn_user == user_id
-      guide = "당신의 턴입니다. 가능한 명령: [공격/물리], [공격/마법], [방어], [도주]"
+      guide = "당신의 턴입니다. 가능한 명령: [공격/물리], [공격/마법], [방어], [도망]"
     else
       guide = "상대의 턴입니다. 잠시 기다리세요."
     end
