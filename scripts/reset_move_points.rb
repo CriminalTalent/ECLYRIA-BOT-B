@@ -1,7 +1,7 @@
 # /root/mastodon_bots/battle_bot/scripts/reset_move_points.rb
 require 'google/apis/sheets_v4'
 require 'googleauth'
-require_relative '../../sheet_manager'  # 경로 수정 완료
+require '/root/mastodon_bots/sheet_manager'  # ✅ 절대경로로 수정
 require 'time'
 
 # === 환경설정 ===
