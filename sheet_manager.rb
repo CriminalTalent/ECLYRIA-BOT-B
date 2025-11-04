@@ -11,48 +11,46 @@ class SheetManager
     )
   end
 
+  # === 기본 유틸 ===
   def read_values(range)
     result = @service.get_spreadsheet_values(@sheet_id, range)
     result.values
   rescue => e
-    puts "Error reading values: #{e.message}"
+    puts "[시트 읽기 오류] #{e.message}"
     nil
   end
 
   def update_values(range, values)
     value_range = Google::Apis::SheetsV4::ValueRange.new(values: values)
     @service.update_spreadsheet_value(
-      @sheet_id,
-      range,
-      value_range,
+      @sheet_id, range, value_range,
       value_input_option: 'USER_ENTERED'
     )
   rescue => e
-    puts "Error updating values: #{e.message}"
+    puts "[시트 업데이트 오류] #{e.message}"
   end
 
   def append_values(range, values)
     value_range = Google::Apis::SheetsV4::ValueRange.new(values: values)
     @service.append_spreadsheet_value(
-      @sheet_id,
-      range,
-      value_range,
+      @sheet_id, range, value_range,
       value_input_option: 'USER_ENTERED'
     )
   rescue => e
-    puts "Error appending values: #{e.message}"
+    puts "[시트 추가 오류] #{e.message}"
   end
 
+  # === 사용자 관련 ===
   def find_user(user_id)
     values = read_values("사용자!A:J")
     return nil unless values
-    
     headers = values[0]
+
     values.each_with_index do |row, index|
-      next if index == 0
+      next if index.zero?
       if row[0]&.gsub('@', '') == user_id.gsub('@', '')
         result = {}
-        headers.each_with_index { |header, col_index| result[header] = row[col_index] }
+        headers.each_with_index { |header, i| result[header] = row[i] }
         result['_row'] = index + 1
         return result
       end
@@ -69,56 +67,68 @@ class SheetManager
   def update_stat(user_id, stat_name, value)
     user = find_user(user_id)
     return unless user
-    
-    values = read_values("사용자!A1:Z1")
-    headers = values[0]
+
+    headers = read_values("사용자!A1:Z1")&.first
+    return unless headers
     col_index = headers.index(stat_name)
     return unless col_index
-    
-    col_letter = number_to_column_letter(col_index + 1)
-    range = "사용자!#{col_letter}#{user['_row']}"
+
+    range = "사용자!#{number_to_column_letter(col_index + 1)}#{user['_row']}"
     update_values(range, [[value]])
   end
 
-  def find_investigation_data(target, kind)
+  # === 조사 관련 ===
+  def find_investigation_entry(target, kind)
     values = read_values("조사!A:E")
     return nil unless values && !values.empty?
-    
+
     headers = values[0]
     values.each_with_index do |row, index|
-      next if index == 0
-      if row[0] == target
-        if kind == "조사"
-          if ["조사", "DM조사"].include?(row[1])
-            result = {}
-            headers.each_with_index { |header, col_index| result[header] = row[col_index] }
-            return result
-          end
-        else
-          if row[1] == kind
-            result = {}
-            headers.each_with_index { |header, col_index| result[header] = row[col_index] }
-            return result
-          end
-        end
+      next if index.zero?
+      if row[0] == target && (row[1] == kind || (kind == "조사" && row[1] == "DM조사"))
+        result = {}
+        headers.each_with_index { |header, i| result[header] = row[i] }
+        return result
       end
     end
     nil
   end
 
+  # === 위치/세부조사 시스템 ===
+  def is_location?(target)
+    # "조사" 시트에서 세부 대상이 아닌 단독 위치를 식별
+    values = read_values("조사!A:B")
+    return false unless values
+    targets = values.map { |r| r[0] }.compact
+    !targets.include?(target) && targets.any? { |t| t.start_with?(target + " ") }
+  end
+
+  def find_details_in_location(location)
+    values = read_values("조사!A:B")
+    return [] unless values
+    values.map { |r| r[0] }.compact.select { |t| t.start_with?(location + " ") }
+  end
+
+  def find_related_targets(target)
+    return [] unless target.include?(" ")
+    location_prefix = target.split(" ").first
+    find_details_in_location(location_prefix).reject { |t| t == target }
+  end
+
   private
 
-  def number_to_column_letter(col_num)
+  def number_to_column_letter(num)
     result = ""
-    while col_num > 0
-      col_num -= 1
-      result = ((col_num % 26) + 65).chr + result
-      col_num /= 26
+    while num > 0
+      num -= 1
+      result = ((num % 26) + 65).chr + result
+      num /= 26
     end
     result
   end
 end
 
+# === Worksheet Wrapper (보조용 클래스) ===
 class WorksheetWrapper
   def initialize(sheet_manager, title)
     @sheet_manager = sheet_manager
@@ -132,15 +142,6 @@ class WorksheetWrapper
     @data ||= []
   end
 
-  def save
-    true
-  end
-
-  def num_rows
-    load_data
-    @data.length
-  end
-
   def rows
     load_data
     @data
@@ -149,25 +150,24 @@ class WorksheetWrapper
   def [](row, col)
     load_data
     return nil if row < 1 || row > @data.length
-    return nil if col < 1 || col > (@data[row-1]&.length || 0)
-    @data[row-1][col-1]
+    return nil if col < 1 || col > (@data[row - 1]&.length || 0)
+    @data[row - 1][col - 1]
   end
 
   def update_cell(row, col, value)
-    column_letter = number_to_column_letter(col)
-    range = "#{@title}!#{column_letter}#{row}"
+    range = "#{@title}!#{number_to_column_letter(col)}#{row}"
     @sheet_manager.update_values(range, [[value]])
     load_data
   end
 
   private
 
-  def number_to_column_letter(col_num)
+  def number_to_column_letter(num)
     result = ""
-    while col_num > 0
-      col_num -= 1
-      result = ((col_num % 26) + 65).chr + result
-      col_num /= 26
+    while num > 0
+      num -= 1
+      result = ((num % 26) + 65).chr + result
+      num /= 26
     end
     result
   end
