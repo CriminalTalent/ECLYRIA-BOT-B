@@ -1,7 +1,7 @@
-# scripts/reset_move_points.rb
+# /root/mastodon_bots/battle_bot/scripts/reset_move_points.rb
 require 'google/apis/sheets_v4'
 require 'googleauth'
-require_relative '../sheet_manager'
+require_relative '../../sheet_manager'  # 경로 수정 완료
 require 'time'
 
 # === 환경설정 ===
@@ -9,8 +9,8 @@ TIMEZONE = 'Asia/Seoul'
 RESET_POINTS = 3
 
 # === 시트 ID와 인증 경로 지정 ===
-SHEET_ID = '<<여기에 실제 구글시트 ID 입력>>'
-CREDENTIALS_PATH = '/root/mastodon_bots/credentials.json' # 서비스 계정 키 JSON 경로
+SHEET_ID = '1sf6DpuOZXpLVMc8EwJr_gzsUOx_GO2Tp3mgsIQZtkOQ'  # ✅ 구글 시트 ID
+CREDENTIALS_PATH = '/root/mastodon_bots/credentials.json'  # ✅ 서비스 계정 JSON 경로
 
 sheet_manager = SheetManager.new(SHEET_ID, CREDENTIALS_PATH)
 
@@ -20,8 +20,7 @@ puts "[#{now.strftime('%Y-%m-%d %H:%M:%S')}] 이동 포인트 초기화 실행"
 rows = sheet_manager.read_values('조사상태!A:F')
 rows&.each_with_index do |row, i|
   next if i == 0 || row[0].to_s.strip.empty?
-  user_id = row[0]
-  # ⚠️ F열이 "이동포인트" 컬럼이라고 가정
+  # ⚠️ F열이 '이동포인트' 컬럼이라고 가정
   sheet_manager.update_values("조사상태!F#{i + 1}", [[RESET_POINTS]])
 end
 
