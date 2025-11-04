@@ -1,4 +1,3 @@
-# commands/investigate_command.rb
 require 'date'
 
 class InvestigateCommand
@@ -18,20 +17,19 @@ class InvestigateCommand
       return
     end
 
-    # === 1️⃣ 위치 조사 (세부조사 없음) ===
+    # === 위치 조사 ===
     if @sheet_manager.is_location?(target)
       detail_targets = @sheet_manager.find_details_in_location(target)
-      if detail_targets.any?
-        msg = "#{target}입니다.\n"
-        msg += "이곳에서 조사할 수 있는 대상: " + detail_targets.join(' / ')
-      else
-        msg = "#{target}입니다.\n이곳에서는 현재 조사할 만한 것이 없습니다."
-      end
+      msg = if detail_targets.any?
+              "#{target}입니다.\n이곳에서 조사할 수 있는 대상: " + detail_targets.join(' / ')
+            else
+              "#{target}입니다.\n이곳에서는 현재 조사할 만한 것이 없습니다."
+            end
       @mastodon_client.reply(reply_id, msg, visibility: 'unlisted')
       return
     end
 
-    # === 2️⃣ 세부조사 ===
+    # === 세부조사 ===
     row = @sheet_manager.find_investigation_entry(target, kind)
     unless row
       nearby = @sheet_manager.find_related_targets(target)
@@ -40,7 +38,7 @@ class InvestigateCommand
       return
     end
 
-    # === 3️⃣ 난이도 판정 ===
+    # === 판정 ===
     difficulty = row["난이도"].to_i
     luck = (user["행운"] || 0).to_i
     dice = rand(1..20)
@@ -48,7 +46,6 @@ class InvestigateCommand
     success = total >= difficulty
     result_text = success ? row["성공결과"] : row["실패결과"]
 
-    # === 4️⃣ 단계별 출력 ===
     start_msg = @mastodon_client.reply(reply_id, "(#{target}) #{kind}을(를) 시작합니다...\n난이도: #{difficulty}", visibility: 'unlisted')
     sleep 2
 
@@ -56,22 +53,26 @@ class InvestigateCommand
                     when "정밀조사"
                       "당신은 손끝으로 천천히 표면을 더듬습니다. 작은 흔적 하나까지 놓치지 않으려는 듯 집중합니다."
                     when "감지"
-                      "당신은 말을 멈추고 조용히 주변의 기류를 살핍니다. 눈으로 보이지 않는 미세한 움직임이 느껴집니다."
+                      "당신은 말을 멈추고 조용히 주변의 기류를 살핍니다. 눈에 보이지 않는 움직임이 미세하게 감지됩니다."
                     when "훔쳐보기"
-                      "당신은 숨을 죽이고 시선의 각도만으로 상황을 파악합니다. 누구도 당신의 시선을 눈치채지 못합니다."
+                      "당신은 숨을 죽이고 시선만으로 상황을 파악합니다. 아무도 당신의 시선을 의식하지 못합니다."
                     else
-                      "당신은 주위를 천천히 훑어보며 현장의 상태를 확인합니다. 사소한 흔적 하나까지 기록하려 합니다."
+                      "당신은 천천히 주위를 둘러보며 현장의 상태를 관찰합니다."
                     end
-
     mid = @mastodon_client.reply(start_msg, progress_text, in_reply_to_id: start_msg.id, visibility: 'unlisted')
     sleep 3
 
     result_msg = "#{kind} 판정: #{dice} + 행운 #{luck} = #{total} (난이도 #{difficulty})\n"
-    result_msg += success ? "결과: 판정 성공\n" : "결과: 판정 실패\n"
-    result_msg += success ? "기록: #{result_text.to_s.strip}" : "관찰 기록: #{result_text.to_s.strip}"
+    result_msg += success ? "결과: 성공\n" : "결과: 실패\n"
+    result_msg += success ? "기록: #{result_text}" : "관찰 기록: #{result_text}"
 
     @mastodon_client.reply(mid, result_msg, in_reply_to_id: start_msg.id, visibility: 'unlisted')
 
+    # === 로그 기록 ===
+    location = target.include?(" ") ? target.split(" ").first : "불명 위치"
+    @sheet_manager.log_investigation(user_id, location, target, kind, success, result_text.to_s.strip)
+
+    # === 마지막 조사일 갱신 ===
     today = Time.now.strftime('%Y-%m-%d')
     @sheet_manager.update_stat(user_id, "마지막조사일", today)
 
