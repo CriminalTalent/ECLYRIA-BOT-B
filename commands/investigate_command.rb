@@ -1,7 +1,10 @@
 # commands/investigate_command.rb
 require 'date'
+require 'time'
 
 class InvestigateCommand
+  DAILY_MOVE_LIMIT = 3
+
   def initialize(mastodon_client, sheet_manager)
     @mastodon_client = mastodon_client
     @sheet_manager = sheet_manager
@@ -85,7 +88,7 @@ class InvestigateCommand
     location = state["위치"]
     row = @sheet_manager.find_investigation_entry(target, "정밀조사")
     unless row
-      @mastodon_client.reply(reply_id, "지금은 #{target}을(를) 조사할 수 없습니다. 다시 시도해보세요.", visibility: 'unlisted')
+      @mastodon_client.reply(reply_id, "지금은 #{target}을(를) 조사할 수 없습니다.", visibility: 'unlisted')
       return
     end
 
@@ -118,21 +121,23 @@ class InvestigateCommand
 
     points = state["이동포인트"].to_i
     if points <= 0
-      @mastodon_client.reply(reply_id, "이동 포인트가 부족합니다. 더 이상 이동할 수 없습니다.", visibility: 'unlisted')
+      @mastodon_client.reply(reply_id, "이동 포인트가 부족합니다. (하루 3회 한정, 자정에 초기화)", visibility: 'unlisted')
       return
     end
 
+    new_points = points - 1
+    @sheet_manager.update_move_points(user_id, new_points)
     @sheet_manager.update_investigation_state(user_id, "진행중", location)
-    @sheet_manager.update_move_points(user_id, points - 1)
 
-    @mastodon_client.reply(reply_id, "#{location}(으)로 이동했습니다. 남은 이동 포인트: #{points - 1}", visibility: 'unlisted')
+    @mastodon_client.reply(reply_id, "#{location}(으)로 이동했습니다. 남은 이동 포인트: #{new_points}/3", visibility: 'unlisted')
   end
 
   # === [위치확인]
   def check_location(user_id, reply_id)
     state = @sheet_manager.get_investigation_state(user_id)
     location = state["위치"] || "-"
-    @mastodon_client.reply(reply_id, "현재 위치: #{location}", visibility: 'unlisted')
+    points = state["이동포인트"] || 0
+    @mastodon_client.reply(reply_id, "현재 위치: #{location}\n남은 이동 포인트: #{points}/3", visibility: 'unlisted')
   end
 
   # === [협력조사/대상/@상대]
