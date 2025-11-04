@@ -60,8 +60,10 @@ class BattleCommand
         return
       end
       if BattleState.active?
+        snapshot = BattleState.current_snapshot
         BattleState.reset!
-        @mastodon_client.reply(reply_id, "총괄계 명령으로 전투가 강제 종료되었습니다.", visibility: 'public')
+        summary_text = summarize_battle_result(snapshot, "총괄계 명령으로 전투가 강제 종료되었습니다.")
+        @mastodon_client.reply(reply_id, summary_text, visibility: 'public')
         puts "[총괄계] #{user_id}가 전투를 중단함"
       else
         @mastodon_client.reply(reply_id, "현재 진행 중인 전투가 없습니다.", visibility: 'direct')
@@ -95,13 +97,21 @@ class BattleCommand
     # 전투 로그 출력
     @mastodon_client.reply(reply_id, result, visibility: 'unlisted')
 
-    # HP 상태 표시 (BattleState에 기록된 현재 HP 기준)
+    # HP 상태 표시
     battle_info = BattleState.current_snapshot
     if battle_info && battle_info["players"]
       status_lines = battle_info["players"].map do |p|
         "#{p['name']} | HP #{p['hp']} / #{p['max_hp']}"
       end
       @mastodon_client.reply(reply_id, status_lines.join("\n"), visibility: 'unlisted')
+    end
+
+    # 전투 종료 감지
+    if battle_info && battle_info["players"].any? { |p| p["hp"].to_i <= 0 }
+      summary_text = summarize_battle_result(battle_info)
+      BattleState.reset!
+      @mastodon_client.reply(reply_id, summary_text, visibility: 'unlisted')
+      return
     end
 
     # 다음 턴 안내
@@ -117,5 +127,32 @@ class BattleCommand
     puts "[에러] 전투 처리 중 오류: #{e.message}"
     puts e.backtrace.first(5)
     @mastodon_client.reply(reply_id, "전투 처리 중 오류가 발생했습니다: #{e.message}", visibility: 'direct')
+  end
+
+  private
+
+  # 전투 종료 요약 출력
+  def summarize_battle_result(snapshot, reason = nil)
+    lines = []
+    lines << (reason || "전투가 종료되었습니다.")
+    lines << ""
+    snapshot["players"].each do |p|
+      lines << "#{p['name']} | 최종 HP: #{p['hp']} / #{p['max_hp']}"
+    end
+
+    alive = snapshot["players"].select { |p| p["hp"].to_i > 0 }
+    if alive.size == 1
+      winner = alive.first["name"]
+      lines << ""
+      lines << "승자: #{winner}"
+    elsif alive.empty?
+      lines << ""
+      lines << "모든 전투자가 쓰러졌습니다. 무승부로 처리됩니다."
+    else
+      lines << ""
+      lines << "전투가 조기 종료되었습니다."
+    end
+
+    lines.join("\n")
   end
 end
