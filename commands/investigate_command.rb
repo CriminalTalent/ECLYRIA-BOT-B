@@ -21,7 +21,7 @@ class InvestigateCommand
     # 조사 데이터 불러오기
     row = @sheet_manager.find_investigation_data(target, kind)
     unless row
-      @mastodon_client.reply(reply_id, "#{target}에 대한 #{kind} 정보가 없습니다.", visibility: 'unlisted')
+      @mastodon_client.reply(reply_id, "지금은 #{target}에 대한 #{kind}이(가) 불가능합니다.", visibility: 'unlisted')
       return
     end
 
@@ -33,7 +33,11 @@ class InvestigateCommand
     result = success ? row["성공결과"] : row["실패결과"]
 
     # 1단계 — 시작
-    first = @mastodon_client.reply(reply_id, "(#{target}) #{kind}을(를) 시작합니다...\n난이도: #{difficulty}", visibility: 'unlisted')
+    first = @mastodon_client.reply(
+      reply_id,
+      "(#{target}) #{kind}을(를) 시작합니다...\n난이도: #{difficulty}",
+      visibility: 'unlisted'
+    )
     sleep 2
 
     # 2단계 — 과정 묘사
@@ -54,6 +58,17 @@ class InvestigateCommand
     result_text = "#{kind} 판정: #{dice} + 행운 #{luck} = #{total} (난이도 #{difficulty})\n"
     result_text += success ? "성공\n" : "실패\n"
     result_text += result.to_s.strip
+
+    # 4단계 — 하위 항목(다음 행동 제시)
+    subtargets = @sheet_manager.get_values("조사!A2:B")&.select do |r|
+      r[0]&.start_with?(target) && r[0] != target
+    end
+
+    if subtargets && subtargets.any?
+      names = subtargets.map { |r| r[0].sub(/^#{Regexp.escape(target)}\s*/, "") }.uniq
+      result_text += "\n\n#{target}에서 확인할 수 있는 것들: #{names.join(' / ')}"
+      result_text += "\n이 중 조사하거나 정밀조사할 수 있습니다."
+    end
 
     @mastodon_client.reply(mid, result_text, in_reply_to_id: first.id, visibility: 'unlisted')
 
