@@ -27,52 +27,55 @@ class SheetManager
     @service.append_spreadsheet_value(@sheet_id, range, range_obj, value_input_option: 'USER_ENTERED')
   end
 
-  # === 사용자 관련 ===
+  # === 사용자 ===
   def find_user(user_id)
     rows = read_values("사용자!A:J")
     return nil unless rows
     headers = rows[0]
-    rows.each_with_index do |row, i|
+    rows.each_with_index do |r, i|
       next if i == 0
-      if row[0]&.gsub('@', '') == user_id.gsub('@', '')
-        data = {}
-        headers.each_with_index { |h, j| data[h] = row[j] }
-        data["_row"] = i + 1
-        return data
+      if r[0]&.gsub('@', '') == user_id.gsub('@', '')
+        h = {}
+        headers.each_with_index { |hname, j| h[hname] = r[j] }
+        h["_row"] = i + 1
+        return h
       end
     end
     nil
   end
 
   # === 조사 기능 ===
-  def find_investigation_entry(target, kind)
-    rows = read_values("조사!A:G")
-    return nil unless rows && !rows.empty?
-    headers = rows[0]
-
-    rows.each_with_index do |r, i|
-      next if i == 0
-      if r[1] == target && (r[3] == kind || (kind == "조사" && r[3] == "DM조사"))
-        entry = {}
-        headers.each_with_index { |h, j| entry[h] = r[j] }
-        return entry
-      end
-    end
-    nil
-  end
-
-  def find_details_in_location(location)
-    rows = read_values("조사!A:B")
-    return [] unless rows
-    rows.map { |r| r[1] if r[0] == location && r[1] && !r[1].empty? }.compact.uniq
-  end
-
   def is_location?(target)
     rows = read_values("조사!A:A")
     rows.flatten.compact.include?(target)
   end
 
-  # === 조사상태 관리 ===
+  def available_locations
+    rows = read_values("조사!A:A")
+    rows.flatten.compact.uniq
+  end
+
+  def find_details_in_location(location)
+    rows = read_values("조사!A:B")
+    rows.select { |r| r[0] == location && r[1] && !r[1].empty? }.map { |r| r[1] }.uniq
+  end
+
+  def find_investigation_entry(target, kind)
+    rows = read_values("조사!A:G")
+    return nil unless rows && !rows.empty?
+    headers = rows[0]
+    rows.each_with_index do |r, i|
+      next if i == 0
+      if r[1] == target && r[3] == kind
+        data = {}
+        headers.each_with_index { |h, j| data[h] = r[j] }
+        return data
+      end
+    end
+    nil
+  end
+
+  # === 조사상태 ===
   def get_investigation_state(user_id)
     rows = read_values("조사상태!A:C")
     headers = rows[0]
@@ -88,7 +91,7 @@ class SheetManager
     update_values("조사상태!B#{idx+1}:C#{idx+1}", [[state, location]])
   end
 
-  # === 로그 기록 ===
+  # === 로그 ===
   def log_investigation(user_id, location, target, kind, success, result)
     time = Time.now.strftime('%Y-%m-%d %H:%M')
     outcome = success ? "성공" : "실패"
