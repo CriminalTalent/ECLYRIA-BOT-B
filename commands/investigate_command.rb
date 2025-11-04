@@ -22,8 +22,8 @@ class InvestigateCommand
     end
   rescue => e
     puts "[에러] 조사 처리 중 오류: #{e.message}"
-    puts e.backtrace.first(3)
-    @mastodon_client.reply(reply_id, "조사 처리 중 오류가 발생했습니다.", visibility: 'direct')
+    puts e.backtrace.first(5)
+    @mastodon_client.reply(reply_id, "조사 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.", visibility: 'direct')
   end
 
   private
@@ -42,7 +42,6 @@ class InvestigateCommand
       return
     end
 
-    # 현재 가능한 위치 목록 가져오기
     locations = @sheet_manager.available_locations
     msg = "조사를 시작합니다.\n"
     msg += "다음 중 하나를 선택하세요:\n"
@@ -52,7 +51,9 @@ class InvestigateCommand
 
   # 📍 [조사/위치]
   def handle_location(location, user_id, reply_id)
-    unless validate_user(user_id, reply_id)
+    user = @sheet_manager.find_user(user_id)
+    unless user
+      @mastodon_client.reply(reply_id, "등록되지 않은 사용자입니다. [입학/이름]으로 등록해주세요.", visibility: 'direct')
       return
     end
 
@@ -84,7 +85,7 @@ class InvestigateCommand
     location = state["위치"]
     row = @sheet_manager.find_investigation_entry(target, "정밀조사")
     unless row
-      @mastodon_client.reply(reply_id, "#{target}은(는) 현재 조사할 수 없습니다. 다시 시도해보세요.", visibility: 'unlisted')
+      @mastodon_client.reply(reply_id, "지금은 #{target}을(를) 조사할 수 없습니다. 다시 시도해보세요.", visibility: 'unlisted')
       return
     end
 
@@ -104,7 +105,7 @@ class InvestigateCommand
     msg += result.to_s
     @mastodon_client.reply(reply_id, msg, visibility: 'unlisted')
 
-    # 로그 저장
+    # 로그 기록
     @sheet_manager.log_investigation(user_id, location, target, "정밀조사", success, result)
   end
 
@@ -112,14 +113,5 @@ class InvestigateCommand
   def end_investigation(user_id, reply_id)
     @sheet_manager.update_investigation_state(user_id, "없음", "-")
     @mastodon_client.reply(reply_id, "조사를 종료했습니다.", visibility: 'unlisted')
-  end
-
-  def validate_user(user_id, reply_id)
-    user = @sheet_manager.find_user(user_id)
-    unless user
-      @mastodon_client.reply(reply_id, "등록되지 않은 사용자입니다. [입학/이름]으로 등록해주세요.", visibility: 'direct')
-      return false
-    end
-    true
   end
 end
