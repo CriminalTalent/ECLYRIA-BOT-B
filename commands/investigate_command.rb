@@ -18,10 +18,21 @@ class InvestigateCommand
       return
     end
 
-    # 조사 데이터 불러오기
+    # 조사 데이터 확인
     row = @sheet_manager.find_investigation_data(target, kind)
     unless row
-      @mastodon_client.reply(reply_id, "#{target}의 정보를 확인할 수 없습니다. 지금은 조사가 어려운 것 같습니다. 다시 한 번 시도해보세요.", visibility: 'unlisted')
+      # 같은 장소의 다른 조사 가능 항목을 찾아서 함께 안내
+      nearby_list = @sheet_manager.find_related_targets(target)
+      nearby_text = if nearby_list && !nearby_list.empty?
+                      "근처에서 다시 살펴볼 수 있는 곳: " + nearby_list.join(' / ')
+                    else
+                      "주변에서는 특별히 조사할 만한 것이 보이지 않습니다."
+                    end
+      @mastodon_client.reply(
+        reply_id,
+        "#{target}의 정보를 지금은 확인할 수 없습니다. 다시 한 번 시도해보세요.\n#{nearby_text}",
+        visibility: 'unlisted'
+      )
       return
     end
 
