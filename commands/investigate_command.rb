@@ -18,57 +18,54 @@ class InvestigateCommand
       return
     end
 
-    # 조사 데이터 확인
-    row = @sheet_manager.find_investigation_data(target, kind)
-    unless row
-      # 같은 장소의 다른 조사 가능 항목을 찾아서 함께 안내
-      nearby_list = @sheet_manager.find_related_targets(target)
-      nearby_text = if nearby_list && !nearby_list.empty?
-                      "근처에서 다시 살펴볼 수 있는 곳: " + nearby_list.join(' / ')
-                    else
-                      "주변에서는 특별히 조사할 만한 것이 보이지 않습니다."
-                    end
-      @mastodon_client.reply(
-        reply_id,
-        "#{target}의 정보를 지금은 확인할 수 없습니다. 다시 한 번 시도해보세요.\n#{nearby_text}",
-        visibility: 'unlisted'
-      )
+    # === 1️⃣ 위치 조사 (세부조사 없음) ===
+    if @sheet_manager.is_location?(target)
+      detail_targets = @sheet_manager.find_details_in_location(target)
+      if detail_targets.any?
+        msg = "#{target}입니다.\n"
+        msg += "이곳에서 살펴볼 수 있는 대상: " + detail_targets.join(' / ')
+      else
+        msg = "#{target}입니다.\n이곳에서는 아직 특별히 살펴볼 만한 것이 없습니다."
+      end
+      @mastodon_client.reply(reply_id, msg, visibility: 'unlisted')
       return
     end
 
+    # === 2️⃣ 세부조사 ===
+    row = @sheet_manager.find_investigation_entry(target, kind)
+    unless row
+      nearby = @sheet_manager.find_related_targets(target)
+      hint = nearby.any? ? "이 주변에서 살펴볼 수 있는 곳: #{nearby.join(' / ')}" : "다른 조사가 필요할 것 같습니다."
+      @mastodon_client.reply(reply_id, "지금은 #{target}을(를) 조사할 수 없습니다. 다시 시도해보세요.\n#{hint}", visibility: 'unlisted')
+      return
+    end
+
+    # === 3️⃣ 난이도 판정 ===
     difficulty = row["난이도"].to_i
     luck = (user["행운"] || 0).to_i
     dice = rand(1..20)
     total = luck + dice
     success = total >= difficulty
-    result = success ? row["성공결과"] : row["실패결과"]
+    result_text = success ? row["성공결과"] : row["실패결과"]
 
-    # 1단계 — 시작
-    first = @mastodon_client.reply(reply_id, "(#{target}) #{kind}을(를) 시작합니다...\n난이도: #{difficulty}", visibility: 'unlisted')
+    # 단계적 출력
+    start_msg = @mastodon_client.reply(reply_id, "(#{target}) #{kind}을(를) 시작합니다...\n난이도: #{difficulty}", visibility: 'unlisted')
     sleep 2
-
-    # 2단계 — 과정 묘사
     progress_text = case kind
-                    when "정밀조사"
-                      "당신은 숨을 죽이고 주변의 세부 흔적을 관찰합니다..."
-                    when "감지"
-                      "공기의 흐름이 미묘하게 달라집니다. 마력이 감돌고 있습니다..."
-                    when "훔쳐보기"
-                      "조용히 시선을 흘려 주변 상황을 파악하려 합니다..."
-                    else
-                      "조심스레 주위를 탐색합니다..."
+                    when "정밀조사" then "당신은 숨을 죽이고 세부 흔적을 관찰합니다..."
+                    when "감지" then "공기의 흐름이 미묘하게 달라집니다. 마력이 감돌고 있습니다..."
+                    when "훔쳐보기" then "조용히 시선을 흘려 주변 상황을 살핍니다..."
+                    else "조심스레 주변을 탐색합니다..."
                     end
-    mid = @mastodon_client.reply(first, progress_text, in_reply_to_id: first.id, visibility: 'unlisted')
+    mid = @mastodon_client.reply(start_msg, progress_text, in_reply_to_id: start_msg.id, visibility: 'unlisted')
     sleep 3
 
-    # 3단계 — 결과 출력
-    result_text = "#{kind} 판정: #{dice} + 행운 #{luck} = #{total} (난이도 #{difficulty})\n"
-    result_text += success ? "성공\n" : "실패\n"
-    result_text += result.to_s.strip
+    result_msg = "#{kind} 판정: #{dice} + 행운 #{luck} = #{total} (난이도 #{difficulty})\n"
+    result_msg += success ? "성공\n" : "실패\n"
+    result_msg += result_text.to_s.strip
 
-    @mastodon_client.reply(mid, result_text, in_reply_to_id: first.id, visibility: 'unlisted')
+    @mastodon_client.reply(mid, result_msg, in_reply_to_id: start_msg.id, visibility: 'unlisted')
 
-    # 마지막 조사일 업데이트
     today = Time.now.strftime('%Y-%m-%d')
     @sheet_manager.update_stat(user_id, "마지막조사일", today)
 
