@@ -58,12 +58,6 @@ class SheetManager
     nil
   end
 
-  def get_stat(user_id, stat_name)
-    user = find_user(user_id)
-    return nil unless user
-    user[stat_name]
-  end
-
   def update_stat(user_id, stat_name, value)
     user = find_user(user_id)
     return unless user
@@ -77,7 +71,7 @@ class SheetManager
     update_values(range, [[value]])
   end
 
-  # === 조사 관련 ===
+  # === 조사 데이터 ===
   def find_investigation_entry(target, kind)
     values = read_values("조사!A:E")
     return nil unless values && !values.empty?
@@ -94,9 +88,7 @@ class SheetManager
     nil
   end
 
-  # === 위치/세부조사 시스템 ===
   def is_location?(target)
-    # "조사" 시트에서 세부 대상이 아닌 단독 위치를 식별
     values = read_values("조사!A:B")
     return false unless values
     targets = values.map { |r| r[0] }.compact
@@ -115,49 +107,15 @@ class SheetManager
     find_details_in_location(location_prefix).reject { |t| t == target }
   end
 
-  private
-
-  def number_to_column_letter(num)
-    result = ""
-    while num > 0
-      num -= 1
-      result = ((num % 26) + 65).chr + result
-      num /= 26
-    end
-    result
-  end
-end
-
-# === Worksheet Wrapper (보조용 클래스) ===
-class WorksheetWrapper
-  def initialize(sheet_manager, title)
-    @sheet_manager = sheet_manager
-    @title = title
-    @data = nil
-    load_data
-  end
-
-  def load_data
-    @data = @sheet_manager.read_values("#{@title}!A:Z")
-    @data ||= []
-  end
-
-  def rows
-    load_data
-    @data
-  end
-
-  def [](row, col)
-    load_data
-    return nil if row < 1 || row > @data.length
-    return nil if col < 1 || col > (@data[row - 1]&.length || 0)
-    @data[row - 1][col - 1]
-  end
-
-  def update_cell(row, col, value)
-    range = "#{@title}!#{number_to_column_letter(col)}#{row}"
-    @sheet_manager.update_values(range, [[value]])
-    load_data
+  # === 조사 로그 기록 ===
+  def log_investigation(user_id, location, target, kind, success, result_text)
+    time = Time.now.strftime('%Y-%m-%d %H:%M')
+    outcome = success ? "성공" : "실패"
+    values = [[time, user_id, location, target, kind, outcome, result_text]]
+    append_values("조사로그!A:G", values)
+    puts "[로그기록] #{user_id} / #{target} / #{kind} → #{outcome}"
+  rescue => e
+    puts "[조사로그 기록 오류] #{e.message}"
   end
 
   private
