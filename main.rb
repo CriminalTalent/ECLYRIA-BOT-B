@@ -1,6 +1,7 @@
 $stdout.sync = true
 $stderr.sync = true
 require_relative '/root/http_patch'
+require_relative 'core/battle_engine'
 
 # main.rb
 require 'dotenv/load'
