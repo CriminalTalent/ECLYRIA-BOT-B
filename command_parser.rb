@@ -44,6 +44,7 @@ class CommandParser
       BattleState.clear
 
     # === 조사 관련 ===
+    # 여기에는 기존처럼 둬도 됨 (위에서 [조사/위치]는 이미 return 했으니까)
     when /\[조사시작\]/i,
          /\[조사\/.+\]/i,
          /\[세부조사\/.+\]/i,
@@ -67,5 +68,59 @@ class CommandParser
     puts "[에러] CommandParser 오류: #{e.message}"
     puts e.backtrace.first(5)
     @mastodon_client.reply(reply_id, "명령 처리 중 오류가 발생했습니다.", visibility: 'direct')
+  end
+
+  private
+
+  def handle_location_overview(location, user_id, reply_id)
+    # 조사상태 시트에 위치 반영 (없으면 추가, 있으면 갱신)
+    @sheet_manager.upsert_investigation_state(user_id, "조사중", location)
+
+    unless @sheet_manager.is_location?(location)
+      locations = @sheet_manager.available_locations || []
+
+      msg_lines = []
+      msg_lines << "@#{user_id}"
+      msg_lines << "‘#{location}’(은)는 아직 조사할 수 없는 위치야."
+
+      unless locations.empty?
+        msg_lines << ""
+        msg_lines << "지금 조사할 수 있는 위치는 다음과 같아:"
+        locations.each { |loc| msg_lines << "- #{loc}" }
+      end
+
+      @mastodon_client.reply(
+        reply_id,
+        msg_lines.join("\n"),
+        visibility: 'public'
+      )
+      return
+    end
+
+    overviews = @sheet_manager.location_overview_outputs(location) || []
+    details   = @sheet_manager.detail_candidates(location)       || []
+
+    lines = []
+    lines << "@#{user_id}"
+    lines << "#{location}을(를) 둘러본다."
+    lines << ""
+
+    if overviews.any?
+      lines << overviews.join("\n\n")
+    else
+      lines << "아직 이 위치에 대한 설명이 준비되지 않았어."
+    end
+
+    if details.any?
+      lines << ""
+      lines << "[세부 조사 가능 구역]"
+      details.each { |d| lines << "- #{d}" }
+    end
+
+    @mastodon_client.reply(
+      reply_id,
+      lines.join("\n"),
+      visibility: 'public'
+    )
   end
 end
