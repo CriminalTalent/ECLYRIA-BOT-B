@@ -4,7 +4,7 @@ class DMInvestigationCommand
     @sheet_manager = sheet_manager
   end
 
-  def send_result(text, dm_id, reply_status)
+  def send_result(text, user_id, reply_status)
     match = text.match(/DM조사결과\s+@(\S+)\s+(.+)/i)
     unless match
       @mastodon_client.reply(reply_status, "형식이 올바르지 않습니다. 사용법: DM조사결과 @사용자 결과내용")
@@ -14,8 +14,7 @@ class DMInvestigationCommand
     target_username = match[1]
     result_text = match[2]
     
-    # mastodon_client에 account_search 메서드가 있는지 확인 필요
-    # 일단 간단하게 @아이디 형식으로 처리
+    # 간단하게 @아이디 형식으로 처리
     base_domain = ENV['MASTODON_BASE_URL'].split('//').last
     target_id = target_username.start_with?('@') ? target_username : "@#{target_username}"
     
