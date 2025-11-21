@@ -83,7 +83,7 @@ class MastodonClient
   end
 
   # ==========================================
-  #  toot 또는 DM reply
+  #  기본 reply (DM은 DM으로, 멘션은 public으로)
   # ==========================================
   def reply(to_status, text)
     begin
@@ -97,7 +97,7 @@ class MastodonClient
         visibility: visibility == "direct" ? "direct" : "public"
       )
     rescue => e
-      puts "[에러] toot 실패: #{e.message}"
+      puts "[에러] reply 실패: #{e.message}"
     end
   end
 
@@ -119,6 +119,28 @@ class MastodonClient
       )
     rescue => e
       puts "[에러] 멘션 답글 실패: #{e.message}"
+    end
+  end
+
+  # ==========================================
+  #  공개 포스트
+  # ==========================================
+  def post(text, visibility: 'public')
+    begin
+      @client.create_status(text, visibility: visibility)
+    rescue => e
+      puts "[에러] post 실패: #{e.message}"
+    end
+  end
+
+  # ==========================================
+  #  DM 전송
+  # ==========================================
+  def dm(user_id, text)
+    begin
+      @client.create_status("@#{user_id} #{text}", visibility: 'direct')
+    rescue => e
+      puts "[에러] DM 전송 실패: #{e.message}"
     end
   end
 end
