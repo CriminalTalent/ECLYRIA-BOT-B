@@ -14,7 +14,19 @@ class CommandParser
     @dm_investigation_command = DMInvestigationCommand.new(mastodon_client, sheet_manager)
   end
 
-  def parse(text, user_id, reply_id)
+  # 해시 형태의 status를 받아서 처리
+  def handle(status)
+    # HTML 태그 제거 및 텍스트 추출
+    content = status[:content]
+    text = content.gsub(/<[^>]+>/, '').strip
+    
+    user_id = status[:account][:acct]
+    
+    # status 자체를 reply_status로 전달 (해시 형태)
+    parse(text, user_id, status)
+  end
+
+  def parse(text, user_id, reply_status)
     text = text.strip
     puts "[전투봇] 명령 수신: #{text} (from @#{user_id})"
 
@@ -22,29 +34,28 @@ class CommandParser
     # === 전투 관련 ===
     when /\[전투개시\/@?(\S+)\]/i
       target = Regexp.last_match(1)
-      @battle_command.handle_command(user_id, "[전투 #{user_id} vs #{target}]", reply_id)
+      @battle_command.handle_command(user_id, "[전투 #{user_id} vs #{target}]", reply_status)
 
     when /\[전투개시\/@?(\S+)\/@?(\S+)\/@?(\S+)\/@?(\S+)\]/i
       u1, u2, u3, u4 = Regexp.last_match.captures
-      @battle_command.handle_command(user_id, "[전투 #{u1} #{u2} vs #{u3} #{u4}]", reply_id)
+      @battle_command.handle_command(user_id, "[전투 #{u1} #{u2} vs #{u3} #{u4}]", reply_status)
 
     when /\[허수아비\s*(하|중|상)\]/i
       diff = Regexp.last_match(1)
-      @battle_command.handle_command(user_id, "[허수아비 #{diff}]", reply_id)
+      @battle_command.handle_command(user_id, "[허수아비 #{diff}]", reply_status)
 
     when /\[(공격|방어|반격|도주)\]/i
-      @battle_command.handle_command(user_id, text, reply_id)
+      @battle_command.handle_command(user_id, text, reply_status)
 
     when /\[물약사용\]/i
-      @potion_command.use_potion(user_id, reply_id)
+      @potion_command.use_potion(user_id, reply_status)
 
     when /\[전투중단\]/i
-      @mastodon_client.reply(reply_id, "전투가 총괄에 의해 중단되었습니다.", visibility: 'public')
+      @mastodon_client.reply(reply_status, "전투가 총괄에 의해 중단되었습니다.")
       require_relative 'core/battle_state'
       BattleState.clear
 
     # === 조사 관련 ===
-    # 여기에는 기존처럼 둬도 됨 (위에서 [조사/위치]는 이미 return 했으니까)
     when /\[조사시작\]/i,
          /\[조사\/.+\]/i,
          /\[세부조사\/.+\]/i,
@@ -53,26 +64,26 @@ class CommandParser
          /\[협력조사\/.+\/@.+\]/i,
          /\[방해\/@.+\]/i,
          /\[조사종료\]/i
-      @investigate_command.execute(text, user_id, reply_id)
+      @investigate_command.execute(text, user_id, reply_status)
 
     # === DM 조사결과 전송 ===
     when /DM조사결과\s+@(\S+)\s+(.+)/i
-      @dm_investigation_command.send_result(text, user_id, reply_id)
+      @dm_investigation_command.send_result(text, user_id, reply_status)
 
     else
       puts "[무시] 인식되지 않은 명령: #{text}"
-      @mastodon_client.reply(reply_id, "알 수 없는 명령어입니다.", visibility: 'direct')
+      @mastodon_client.reply(reply_status, "알 수 없는 명령어입니다.")
     end
 
   rescue => e
     puts "[에러] CommandParser 오류: #{e.message}"
     puts e.backtrace.first(5)
-    @mastodon_client.reply(reply_id, "명령 처리 중 오류가 발생했습니다.", visibility: 'direct')
+    @mastodon_client.reply(reply_status, "명령 처리 중 오류가 발생했습니다.")
   end
 
   private
 
-  def handle_location_overview(location, user_id, reply_id)
+  def handle_location_overview(location, user_id, reply_status)
     # 조사상태 시트에 위치 반영 (없으면 추가, 있으면 갱신)
     @sheet_manager.upsert_investigation_state(user_id, "조사중", location)
 
@@ -81,7 +92,7 @@ class CommandParser
 
       msg_lines = []
       msg_lines << "@#{user_id}"
-      msg_lines << "‘#{location}’(은)는 아직 조사할 수 없는 위치야."
+      msg_lines << "'#{location}'(은)는 아직 조사할 수 없는 위치야."
 
       unless locations.empty?
         msg_lines << ""
@@ -89,11 +100,7 @@ class CommandParser
         locations.each { |loc| msg_lines << "- #{loc}" }
       end
 
-      @mastodon_client.reply(
-        reply_id,
-        msg_lines.join("\n"),
-        visibility: 'public'
-      )
+      @mastodon_client.reply(reply_status, msg_lines.join("\n"))
       return
     end
 
@@ -117,10 +124,6 @@ class CommandParser
       details.each { |d| lines << "- #{d}" }
     end
 
-    @mastodon_client.reply(
-      reply_id,
-      lines.join("\n"),
-      visibility: 'public'
-    )
+    @mastodon_client.reply(reply_status, lines.join("\n"))
   end
 end
