@@ -2,9 +2,9 @@ require_relative 'battle_state'
 
 class BattleEngine
   DUMMY_STATS = {
-    "하" => { hp: 60, atk: 8,  def: 6,  agi: 8  },
-    "중" => { hp: 80, atk: 12, def: 10, agi: 12 },
-    "상" => { hp: 100, atk: 16, def: 14, agi: 16 }
+    "하" => { hp: 30, atk: 2, def: 1, agi: 2 },
+    "중" => { hp: 50, atk: 3, def: 2, agi: 3 },
+    "상" => { hp: 70, atk: 4, def: 3, agi: 4 }
   }
 
   def initialize(mastodon_client, sheet_manager)
@@ -33,7 +33,7 @@ class BattleEngine
       guarded: {},
       counter: {},
       last_action_time: Time.now,
-      reply_status: reply_status  # 원본 멘션 저장
+      reply_status: reply_status
     })
 
     user1_name = user1["이름"] || user1_id
@@ -65,7 +65,7 @@ class BattleEngine
       guarded: {},
       counter: {},
       last_action_time: Time.now,
-      reply_status: reply_status  # 원본 멘션 저장
+      reply_status: reply_status
     })
 
     names = users.map { |u| (u && u["이름"]) || "(미등록)" }
@@ -77,7 +77,10 @@ class BattleEngine
 
   # === 허수아비 전투 ===
   def start_dummy_battle(user_id, difficulty, reply_status)
+    puts "[DEBUG] Looking for user_id: #{user_id.inspect}"
     user = @sheet_manager.find_user(user_id)
+    puts "[DEBUG] Found user: #{user.inspect}"
+    
     unless user
       @mastodon_client.reply(reply_status, "등록되지 않은 사용자입니다.")
       return
@@ -98,7 +101,7 @@ class BattleEngine
       counter: {},
       dummy_hp: DUMMY_STATS[difficulty][:hp],
       last_action_time: Time.now,
-      reply_status: reply_status  # 원본 멘션 저장
+      reply_status: reply_status
     })
 
     user_name = user["이름"] || user_id
