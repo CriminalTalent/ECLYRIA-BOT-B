@@ -7,7 +7,7 @@ class BattleCommand
     @engine = BattleEngine.new(mastodon_client, sheet_manager)
   end
 
-  def handle_command(user_id, text, reply_id)
+  def handle_command(user_id, text, reply_status)
     puts "[BattleCommand] handle_command: #{text} from #{user_id}"
     
     # 아이디 정규화(맨앞 @ 제거 + 제어문자 제거)
@@ -21,20 +21,20 @@ class BattleCommand
       u2 = sanitize.call(raw2)
       if u1.empty? || u2.empty?
         puts "[BattleCommand] invalid 1v1 args: u1=#{u1.inspect}, u2=#{u2.inspect} (text=#{text.inspect})"
-        return   # ← 여기!
+        return
       end
       puts "[BattleCommand] -> start_1v1 #{u1} vs #{u2}"
-      @engine.start_1v1(u1, u2, reply_id)
+      @engine.start_1v1(u1, u2, reply_status)
     
     when /\A\[전투\s+@?(\S+)\s+@?(\S+)\s+vs\s+@?(\S+)\s+@?(\S+)\]\z/i
-      a,b,c,d = $1,$2,$3,$4
-      u1,u2,u3,u4 = [a,b,c,d].map { |x| sanitize.call(x) }
-      if [u1,u2,u3,u4].any?(&:empty?)
-        puts "[BattleCommand] invalid 2v2 args: #{[u1,u2,u3,u4].inspect} (text=#{text.inspect})"
-        return   # ← 여기!
+      a, b, c, d = $1, $2, $3, $4
+      u1, u2, u3, u4 = [a, b, c, d].map { |x| sanitize.call(x) }
+      if [u1, u2, u3, u4].any?(&:empty?)
+        puts "[BattleCommand] invalid 2v2 args: #{[u1, u2, u3, u4].inspect} (text=#{text.inspect})"
+        return
       end
       puts "[BattleCommand] -> start_2v2 #{u1}, #{u2} vs #{u3}, #{u4}"
-      @engine.start_2v2(u1, u2, u3, u4, reply_id)
+      @engine.start_2v2(u1, u2, u3, u4, reply_status)
     
     when /\[공격\]/i
       puts "[BattleCommand] -> attack"
@@ -55,7 +55,7 @@ class BattleCommand
     when /\[허수아비\s*(하|중|상)\]/i
       diff = Regexp.last_match(1)
       puts "[BattleCommand] -> dummy #{diff}"
-      @engine.start_dummy_battle(user_id, diff, reply_id)
+      @engine.start_dummy_battle(user_id, diff, reply_status)
     
     else
       puts "[BattleCommand] unknown: #{text}"
