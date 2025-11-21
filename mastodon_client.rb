@@ -143,4 +143,26 @@ class MastodonClient
       puts "[에러] DM 전송 실패: #{e.message}"
     end
   end
+
+  # ==========================================
+  #  계정 검색
+  # ==========================================
+  def account_search(query)
+    begin
+      results = @client.search(query, resolve: true)
+      accounts = results.accounts || []
+      # 해시 형태로 변환
+      accounts.map do |account|
+        {
+          'id' => account.id,
+          'username' => account.username,
+          'acct' => account.acct,
+          'display_name' => account.display_name
+        }
+      end
+    rescue => e
+      puts "[에러] 계정 검색 실패: #{e.message}"
+      []
+    end
+  end
 end
