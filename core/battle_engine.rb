@@ -36,8 +36,8 @@ class BattleEngine
     message += "#{first_turn_name}의 차례\n"
     message += "[공격] [방어] [반격] [물약사용] [도주]"
 
-    # 첫 답글을 원본에 달고 그 ID를 저장
-    result = @mastodon_client.reply_with_mentions(reply_status, message, [user1_id, user2_id])
+    # 첫 답글을 원본에 달기
+    @mastodon_client.reply_with_mentions(reply_status, message, [user1_id, user2_id])
     
     BattleState.set({
       type: "1v1",
@@ -47,8 +47,7 @@ class BattleEngine
       guarded: {},
       counter: {},
       last_action_time: Time.now,
-      reply_status: reply_status,
-      last_reply_id: result  # 이 답글에 계속 스레드로 연결
+      reply_status: reply_status
     })
   end
 
@@ -78,7 +77,7 @@ class BattleEngine
     message += "#{first_player_name}의 차례\n"
     message += "[공격] [방어] [반격] [물약사용] [도주]"
 
-    result = @mastodon_client.reply_with_mentions(reply_status, message, ids)
+    @mastodon_client.reply_with_mentions(reply_status, message, ids)
 
     BattleState.set({
       type: "2v2",
@@ -89,8 +88,7 @@ class BattleEngine
       guarded: {},
       counter: {},
       last_action_time: Time.now,
-      reply_status: reply_status,
-      last_reply_id: result
+      reply_status: reply_status
     })
   end
 
@@ -129,8 +127,7 @@ class BattleEngine
       counter: {},
       dummy_hp: DUMMY_STATS[difficulty][:hp],
       last_action_time: Time.now,
-      reply_status: reply_status,
-      last_reply_id: nil  # 아직 없음
+      reply_status: reply_status
     })
     
     if turn_order[0] == dummy_id
@@ -163,17 +160,14 @@ class BattleEngine
         message += "#{user_name}의 차례\n"
         message += "[공격] [방어] [반격] [물약사용] [도주]"
         
-        result = @mastodon_client.reply_with_mentions(reply_status, message, [user_id])
-        state[:last_reply_id] = result if result
+        @mastodon_client.reply_with_mentions(reply_status, message, [user_id])
       end
     else
       # 플레이어 선공
       message += "#{user_name}의 차례\n"
       message += "[공격] [방어] [반격] [물약사용] [도주]"
       
-      result = @mastodon_client.reply_with_mentions(reply_status, message, [user_id])
-      state = BattleState.get
-      state[:last_reply_id] = result if result
+      @mastodon_client.reply_with_mentions(reply_status, message, [user_id])
     end
   end
 
@@ -278,16 +272,14 @@ class BattleEngine
             message += "#{attacker_name}의 차례\n"
             message += "[공격] [방어] [반격] [물약사용] [도주]"
             
-            result = reply_to_battle_thread(message, state)
-            state[:last_reply_id] = result if result
+            reply_to_battle_thread(message, state)
           end
         else
           # 플레이어 차례
           message += "#{attacker_name}의 차례\n"
           message += "[공격] [방어] [반격] [물약사용] [도주]"
           
-          result = reply_to_battle_thread(message, state)
-          state[:last_reply_id] = result if result
+          reply_to_battle_thread(message, state)
         end
       end
     else
@@ -337,6 +329,7 @@ class BattleEngine
         counter_happened = true
         
         if attacker_new_hp <= 0
+          defender_name = defender["이름"] || defender_id
           message = "#{attacker_name}의 공격 (#{atk_roll}+#{atk}) vs #{defender_name}의 방어 (#{def_roll}+#{def_stat})"
           message += guard_text
           message += "\n반격 발생! #{attacker_name}이(가) 5의 반격 피해를 받음 (체력 #{attacker_new_hp})\n"
@@ -377,8 +370,7 @@ class BattleEngine
         message += "#{next_player_name}의 차례\n"
         message += "[공격] [방어] [반격] [물약사용] [도주]"
         
-        result = reply_to_battle_thread(message, state)
-        state[:last_reply_id] = result if result
+        reply_to_battle_thread(message, state)
       end
     end
   end
@@ -469,8 +461,7 @@ class BattleEngine
         message += "#{name}의 차례\n"
         message += "[공격] [방어] [반격] [물약사용] [도주]"
         
-        result = reply_to_battle_thread(message, state)
-        state[:last_reply_id] = result if result
+        reply_to_battle_thread(message, state)
       end
     else
       # 다음 플레이어 선택지도 함께 표시
@@ -480,8 +471,7 @@ class BattleEngine
       message += "#{next_player_name}의 차례\n"
       message += "[공격] [방어] [반격] [물약사용] [도주]"
       
-      result = reply_to_battle_thread(message, state)
-      state[:last_reply_id] = result if result
+      reply_to_battle_thread(message, state)
     end
   end
 
@@ -570,8 +560,7 @@ class BattleEngine
         message += "#{name}의 차례\n"
         message += "[공격] [방어] [반격] [물약사용] [도주]"
         
-        result = reply_to_battle_thread(message, state)
-        state[:last_reply_id] = result if result
+        reply_to_battle_thread(message, state)
       end
     else
       # 다음 플레이어 선택지도 함께 표시
@@ -581,8 +570,7 @@ class BattleEngine
       message += "#{next_player_name}의 차례\n"
       message += "[공격] [방어] [반격] [물약사용] [도주]"
       
-      result = reply_to_battle_thread(message, state)
-      state[:last_reply_id] = result if result
+      reply_to_battle_thread(message, state)
     end
   end
 
@@ -612,18 +600,13 @@ class BattleEngine
 
   private
 
-  # === 전투 스레드에 답글 (이전 답글에 연결) ===
+  # === 전투 스레드에 답글 (원본에 계속 답글 = 자동 스레드) ===
   def reply_to_battle_thread(message, state)
-    return nil unless state[:last_reply_id]
+    return nil unless state[:reply_status]
     participants = state[:participants].reject { |p| p.include?("허수아비") }
     
-    # 마지막 답글에 계속 스레드로 연결
-    @mastodon_client.reply_with_mentions(state[:last_reply_id], message, participants)
-  end
-
-  # === 허수아비 행동 (사용 안 함 - attack/defend/counter에서 직접 처리) ===
-  def dummy_turn
-    # 이제 사용하지 않음 - 각 메서드에서 직접 처리
+    # 항상 원본 status에 답글 (마스토돈이 자동으로 스레드 생성)
+    @mastodon_client.reply_with_mentions(state[:reply_status], message, participants)
   end
 
   def find_opponent(user_id, state)
