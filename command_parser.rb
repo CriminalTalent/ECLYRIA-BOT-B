@@ -39,7 +39,11 @@ class CommandParser
     when /\[체력\]/i
       @hp_command.check_hp(user_id, reply_status)
 
-    # === 물약 사용 (전투 외) ===
+    # === 물약 사용 (전투 외) - 선택 가능 ===
+    when /\[회복\/(\S+)\]/i, /\[힐\/(\S+)\]/i
+      potion_type = Regexp.last_match(1)
+      @heal_command.use_potion(user_id, reply_status, potion_type)
+    
     when /\[회복\]/i, /\[힐\]/i
       @heal_command.use_potion(user_id, reply_status)
 
@@ -60,6 +64,11 @@ class CommandParser
       action = Regexp.last_match(1)
       @battle_command.handle_command(user_id, "[#{action}]", reply_status)
 
+    # === 물약 사용 (전투 중) - 선택 가능 ===
+    when /\[물약사용\/(\S+)\]/i
+      potion_type = Regexp.last_match(1)
+      @potion_command.use_potion(user_id, reply_status, potion_type)
+    
     when /\[물약사용\]/i
       @potion_command.use_potion(user_id, reply_status)
 
