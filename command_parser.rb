@@ -1,6 +1,7 @@
 require_relative 'commands/battle_command'
 require_relative 'commands/investigate_command'
 require_relative 'commands/potion_command'
+require_relative 'commands/heal_command'
 require_relative 'commands/dm_investigation_command'
 require_relative 'commands/hp_command'
 
@@ -12,6 +13,7 @@ class CommandParser
     @battle_command = BattleCommand.new(mastodon_client, sheet_manager)
     @investigate_command = InvestigateCommand.new(mastodon_client, sheet_manager)
     @potion_command = PotionCommand.new(mastodon_client, sheet_manager)
+    @heal_command = HealCommand.new(mastodon_client, sheet_manager)
     @dm_investigation_command = DMInvestigationCommand.new(mastodon_client, sheet_manager)
     @hp_command = HpCommand.new(mastodon_client, sheet_manager)
   end
@@ -36,6 +38,10 @@ class CommandParser
     # === 체력 확인 ===
     when /\[체력\]/i
       @hp_command.check_hp(user_id, reply_status)
+
+    # === 물약 사용 (전투 외) ===
+    when /\[회복\]/i, /\[힐\]/i
+      @heal_command.use_potion(user_id, reply_status)
 
     # === 전투 관련 ===
     when /\[전투개시\/@?(\S+)\]/i
