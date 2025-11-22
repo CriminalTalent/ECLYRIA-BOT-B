@@ -14,29 +14,24 @@ class DMInvestigationCommand
     target_username = match[1]
     result_text = match[2]
     
-    # 간단하게 @아이디 형식으로 처리
-    base_domain = ENV['MASTODON_BASE_URL'].split('//').last
-    target_id = target_username.start_with?('@') ? target_username : "@#{target_username}"
+    # @ 제거하고 순수 username만 추출
+    clean_username = target_username.gsub('@', '').strip
     
-    # 도메인이 없으면 추가
-    unless target_id.include?('@', 1)  # 첫 @를 제외하고 @가 있는지
-      target_id = "#{target_id}@#{base_domain}"
-    end
-    
-    user = @sheet_manager.find_user(target_id)
+    user = @sheet_manager.find_user(clean_username)
     unless user
-      @mastodon_client.reply(reply_status, "#{target_id}는 등록되지 않은 사용자입니다.")
+      @mastodon_client.reply(reply_status, "#{clean_username}는 등록되지 않은 사용자입니다.")
       return
     end
     
     # 대상에게 DM 전송
-    @mastodon_client.dm(target_id, result_text)
+    @mastodon_client.dm(clean_username, result_text)
     
-    # 조사일 업데이트
+    # 조사일 업데이트 (스탯 시트에 "마지막조사일" 컬럼이 있다면)
     today = Time.now.strftime('%Y-%m-%d')
-    @sheet_manager.update_stat(target_id, "마지막조사일", today, :set)
+    # update_user를 사용하거나, 컬럼이 없으면 생략
+    # @sheet_manager.update_user(clean_username, { last_investigation_date: today })
     
     # 발신자에게 확인 메시지
-    @mastodon_client.reply(reply_status, "#{target_id}에게 조사 결과를 전송했습니다.")
+    @mastodon_client.reply(reply_status, "#{clean_username}에게 조사 결과를 전송했습니다.")
   end
 end
