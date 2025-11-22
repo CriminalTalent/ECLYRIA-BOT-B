@@ -4,10 +4,9 @@
 class HealCommand
   # 물약 종류별 회복량 (고정값)
   POTION_TYPES = {
-    "소형 포션" => 20,
-    "중형 포션" => 40,
-    "대형 포션" => 60,
-    "포션" => 20,      # 기본 포션
+    "소형 물약" => 10,
+    "중형 물약" => 30,
+    "대형 물약" => 50,
     "물약" => 20        # 기본 물약
   }
 
@@ -16,7 +15,7 @@ class HealCommand
     @sheet_manager = sheet_manager
   end
 
-  def use_potion(user_id, reply_status)
+  def use_potion(user_id, reply_status, potion_type = nil)
     user = @sheet_manager.find_user(user_id)
     
     unless user
@@ -26,20 +25,10 @@ class HealCommand
 
     # 아이템 확인
     items = user["아이템"] || user[:items] || ""
-    potion_found = nil
-    heal_amount = 0
-
-    # 우선순위: 대형 → 중형 → 소형 → 기본
-    POTION_TYPES.keys.reverse.each do |potion_type|
-      if items.include?(potion_type)
-        potion_found = potion_type
-        heal_amount = POTION_TYPES[potion_type]
-        break
-      end
-    end
-
-    unless potion_found
-      @mastodon_client.reply(reply_status, "@#{user_id} 포션이 없습니다.")
+    
+    # 물약이 하나도 없으면 (어떤 종류든)
+    unless items.include?("물약")
+      @mastodon_client.reply(reply_status, "@#{user_id} 물약이 없습니다. 상점에서 구매하세요.")
       return
     end
 
@@ -52,6 +41,58 @@ class HealCommand
       return
     end
 
+    # 보유한 물약 목록 추출
+    available_potions = []
+    POTION_TYPES.keys.each do |potion|
+      available_potions << potion if items.include?(potion)
+    end
+
+    if available_potions.empty?
+      @mastodon_client.reply(reply_status, "@#{user_id} 사용 가능한 물약이 없습니다.")
+      return
+    end
+
+    # 물약 타입이 지정되지 않았으면 선택지 제공
+    if potion_type.nil?
+      name = user["이름"] || user[:name] || user_id
+      msg = "@#{user_id}\n"
+      msg += "━━━━━━━━━━━━━━━━━━\n"
+      msg += "#{name}의 물약 목록\n"
+      msg += "━━━━━━━━━━━━━━━━━━\n"
+      available_potions.each do |potion|
+        heal = POTION_TYPES[potion]
+        msg += "• #{potion} (회복: #{heal})\n"
+      end
+      msg += "━━━━━━━━━━━━━━━━━━\n"
+      msg += "사용법:\n"
+      msg += "[회복/소형] - 소형 물약 사용\n"
+      msg += "[회복/중형] - 중형 물약 사용\n"
+      msg += "[회복/대형] - 대형 물약 사용"
+      
+      @mastodon_client.reply(reply_status, msg)
+      return
+    end
+
+    # 지정된 물약 타입 찾기
+    potion_found = nil
+    case potion_type
+    when /소형/i
+      potion_found = "소형 물약" if items.include?("소형 물약")
+    when /중형/i
+      potion_found = "중형 물약" if items.include?("중형 물약")
+    when /대형/i
+      potion_found = "대형 물약" if items.include?("대형 물약")
+    when /기본|일반/i
+      potion_found = "물약" if items.include?("물약")
+    end
+
+    unless potion_found
+      @mastodon_client.reply(reply_status, "@#{user_id} 해당 종류의 물약이 없습니다.")
+      return
+    end
+
+    heal_amount = POTION_TYPES[potion_found]
+
     # 회복
     new_hp = [current_hp + heal_amount, 100].min
     actual_heal = new_hp - current_hp
@@ -59,7 +100,7 @@ class HealCommand
     # HP 업데이트
     @sheet_manager.update_user(user_id, { hp: new_hp })
 
-    # 포션 제거 (정확히 일치하는 것만 제거)
+    # 물약 제거 (정확히 일치하는 것만 제거)
     new_items = items.sub(potion_found, "").gsub(/,+/, ",").gsub(/^,|,$/, "").strip
     @sheet_manager.update_user(user_id, { items: new_items })
 
