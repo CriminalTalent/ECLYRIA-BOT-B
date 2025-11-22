@@ -2,6 +2,7 @@ require_relative 'commands/battle_command'
 require_relative 'commands/investigate_command'
 require_relative 'commands/potion_command'
 require_relative 'commands/dm_investigation_command'
+require_relative 'commands/hp_command'
 
 class CommandParser
   def initialize(mastodon_client, sheet_manager)
@@ -12,6 +13,7 @@ class CommandParser
     @investigate_command = InvestigateCommand.new(mastodon_client, sheet_manager)
     @potion_command = PotionCommand.new(mastodon_client, sheet_manager)
     @dm_investigation_command = DMInvestigationCommand.new(mastodon_client, sheet_manager)
+    @hp_command = HpCommand.new(mastodon_client, sheet_manager)
   end
 
   # 해시 형태의 status를 받아서 처리
@@ -31,6 +33,10 @@ class CommandParser
     puts "[전투봇] 명령 수신: #{text} (from @#{user_id})"
 
     case text
+    # === 체력 확인 (체력만) ===
+    when /\[체력\]/i
+      @hp_command.check_hp(user_id, reply_status)
+
     # === 전투 관련 ===
     when /\[전투개시\/@?(\S+)\]/i
       target = Regexp.last_match(1)
