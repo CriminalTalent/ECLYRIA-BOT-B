@@ -33,7 +33,7 @@ class CommandParser
     puts "[전투봇] 명령 수신: #{text} (from @#{user_id})"
 
     case text
-    # === 체력 확인 (체력만) ===
+    # === 체력 확인 ===
     when /\[체력\]/i
       @hp_command.check_hp(user_id, reply_status)
 
