@@ -49,10 +49,10 @@ class MastodonClient
   end
 
   # ==========================================
-  #  🔥 안정형 stream_user (DM + 멘션 모두 처리)
+  #  🔥 안정형 stream_user (@Battle 멘션만 처리)
   # ==========================================
   def stream_user(&block)
-    puts "[마스토돈] user 스트림 구독 시작..."
+    puts "[마스토돈] user 스트림 구독 시작... (@#{@bot_username} 멘션만 처리)"
 
     @streamer.user do |event|
       begin
@@ -66,18 +66,29 @@ class MastodonClient
 
           # DM 처리 - 자신에게 온 DM만
           if status[:visibility] == "direct"
-            # content에서 자신의 username이 있는지 확인
-            content_lower = status[:content].to_s.downcase
-            if content_lower.include?("@#{@bot_username}") || content_lower.include?("@#{@bot_acct}")
-              block.call(status)
+            # mentions 배열에서 @Battle이 있는지 확인
+            if status[:mentions] && status[:mentions].any?
+              has_battle_mention = status[:mentions].any? do |mention|
+                mention[:username].to_s.downcase == @bot_username.downcase ||
+                mention[:acct].to_s.downcase == @bot_acct.downcase
+              end
+              
+              if has_battle_mention
+                block.call(status)
+              end
             end
             next
           end
 
-          # 멘션 처리 - content에 자신의 username이 있는지 확인
+          # 멘션 처리 - @Battle 멘션이 있는지 확인
           if status[:mentions] && status[:mentions].any?
-            content_lower = status[:content].to_s.downcase
-            if content_lower.include?("@#{@bot_username}") || content_lower.include?("@#{@bot_acct}")
+            # mentions 배열에서 @Battle이 있는지 확인
+            has_battle_mention = status[:mentions].any? do |mention|
+              mention[:username].to_s.downcase == @bot_username.downcase ||
+              mention[:acct].to_s.downcase == @bot_acct.downcase
+            end
+            
+            if has_battle_mention
               block.call(status)
             end
             next
@@ -92,10 +103,16 @@ class MastodonClient
           status = deep_symbolize(event.status.to_h)
           next unless status[:account] && status[:account][:acct]
 
-          # content에서 자신의 username이 있는지 확인
-          content_lower = status[:content].to_s.downcase
-          if content_lower.include?("@#{@bot_username}") || content_lower.include?("@#{@bot_acct}")
-            block.call(status)
+          # mentions 배열에서 @Battle이 있는지 확인
+          if status[:mentions] && status[:mentions].any?
+            has_battle_mention = status[:mentions].any? do |mention|
+              mention[:username].to_s.downcase == @bot_username.downcase ||
+              mention[:acct].to_s.downcase == @bot_acct.downcase
+            end
+            
+            if has_battle_mention
+              block.call(status)
+            end
           end
           next
         end
