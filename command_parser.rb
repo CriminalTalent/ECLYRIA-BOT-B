@@ -19,9 +19,9 @@ class CommandParser
     # HTML 태그 제거 및 텍스트 추출
     content = status[:content]
     text = content.gsub(/<[^>]+>/, '').strip
-    
+
     user_id = status[:account][:acct]
-    
+
     # status 자체를 reply_status로 전달 (해시 형태)
     parse(text, user_id, status)
   end
@@ -45,7 +45,8 @@ class CommandParser
       @battle_command.handle_command(user_id, "[허수아비 #{diff}]", reply_status)
 
     when /\[(공격|방어|반격|도주)\]/i
-      @battle_command.handle_command(user_id, text, reply_status)
+      action = Regexp.last_match(1)
+      @battle_command.handle_command(user_id, "[#{action}]", reply_status)
 
     when /\[물약사용\]/i
       @potion_command.use_potion(user_id, reply_status)
@@ -72,7 +73,7 @@ class CommandParser
 
     else
       puts "[무시] 인식되지 않은 명령: #{text}"
-      @mastodon_client.reply(reply_status, "알 수 없는 명령어입니다.")
+      # 명령어가 없으면 무시 (대사만 있는 경우)
     end
 
   rescue => e
