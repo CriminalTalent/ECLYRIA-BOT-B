@@ -118,15 +118,7 @@ class BattleEngine
     message += "선공: #{first_turn_name}\n"
     message += "━━━━━━━━━━━━━━━━━━\n"
     
-    if turn_order[0] == user_id
-      message += "#{user_name}의 차례\n"
-      message += "[공격] [방어] [반격] [물약사용] [도주]"
-    else
-      message += "허수아비가 움직입니다..."
-    end
-
-    result = @mastodon_client.reply_with_mentions(reply_status, message, [user_id])
-
+    # 상태 먼저 저장
     BattleState.set({
       type: "dummy",
       difficulty: difficulty,
@@ -138,12 +130,50 @@ class BattleEngine
       dummy_hp: DUMMY_STATS[difficulty][:hp],
       last_action_time: Time.now,
       reply_status: reply_status,
-      last_reply_id: result
+      last_reply_id: nil  # 아직 없음
     })
-
-    # 허수아비가 선공이면 즉시 턴 진행
+    
     if turn_order[0] == dummy_id
-      dummy_turn
+      # 허수아비 선공이면 바로 행동 계산
+      state = BattleState.get
+      atk = DUMMY_STATS[difficulty][:atk]
+      atk_roll = rand(1..20)
+      atk_total = atk + atk_roll
+      
+      def_stat = (user["방어"] || 10).to_i
+      def_roll = rand(1..20)
+      def_total = def_stat + def_roll
+      damage = [atk_total - def_total, 0].max
+      
+      new_hp = [(user["HP"] || 100).to_i - damage, 0].max
+      @sheet_manager.update_user(user_id, { hp: new_hp })
+      
+      # 첫 공격 메시지 포함
+      message += "허수아비의 공격 (#{atk_roll}+#{atk}) vs #{user_name}의 방어 (#{def_roll}+#{def_stat})\n"
+      message += "데미지: #{damage}, #{user_name} 체력: #{new_hp}\n"
+      message += "━━━━━━━━━━━━━━━━━━\n"
+      
+      if new_hp <= 0
+        message += "#{user_name}이(가) 쓰러졌습니다! 허수아비 승리!"
+        @mastodon_client.reply_with_mentions(reply_status, message, [user_id])
+        BattleState.clear
+      else
+        # 턴 넘기고 플레이어 차례
+        state[:current_turn] = user_id
+        message += "#{user_name}의 차례\n"
+        message += "[공격] [방어] [반격] [물약사용] [도주]"
+        
+        result = @mastodon_client.reply_with_mentions(reply_status, message, [user_id])
+        state[:last_reply_id] = result if result
+      end
+    else
+      # 플레이어 선공
+      message += "#{user_name}의 차례\n"
+      message += "[공격] [방어] [반격] [물약사용] [도주]"
+      
+      result = @mastodon_client.reply_with_mentions(reply_status, message, [user_id])
+      state = BattleState.get
+      state[:last_reply_id] = result if result
     end
   end
 
@@ -181,16 +211,83 @@ class BattleEngine
       else
         state[:current_turn] = state[:turn_order][(state[:turn_order].index(state[:current_turn]) + 1) % state[:turn_order].length]
         
-        # 다음 턴 선택지도 함께 표시
-        message += "#{attacker_name}의 차례\n"
-        message += "[공격] [방어] [반격] [물약사용] [도주]"
-        
-        result = reply_to_battle_thread(message, state)
-        state[:last_reply_id] = result if result
-        
-        # 허수아비 턴이면 즉시 실행
+        # 허수아비 턴이면 바로 행동 계산해서 함께 표시
         if state[:current_turn].to_s.include?("허수아비")
-          dummy_turn
+          # 허수아비 행동 계산
+          user = @sheet_manager.find_user(user_id)
+          atk2 = DUMMY_STATS[difficulty][:atk]
+          atk_roll2 = rand(1..20)
+          atk_total2 = atk2 + atk_roll2
+          
+          def_stat2 = (user["방어"] || 10).to_i
+          def_roll2 = rand(1..20)
+          def_total2 = def_stat2 + def_roll2
+          damage2 = [atk_total2 - def_total2, 0].max
+          
+          guard_text = ""
+          if state.dig(:guarded, user_id)
+            guard_roll = rand(1..20)
+            guard_total = def_stat2 + guard_roll
+            
+            if guard_total >= atk_total2
+              damage2 = 0
+              guard_text = "\n방어 성공! (#{guard_roll}+#{def_stat2}=#{guard_total}) 피해 완전 차단!"
+            else
+              damage2 = atk_total2 - guard_total
+              guard_text = "\n방어 실패! (#{guard_roll}+#{def_stat2}=#{guard_total}) 피해: #{damage2}"
+            end
+            
+            state[:guarded].delete(user_id)
+          end
+          
+          counter_happened = false
+          if state.dig(:counter, user_id) && damage2 > 0
+            state[:counter].delete(user_id)
+            state[:dummy_hp] -= 5
+            counter_happened = true
+            
+            if state[:dummy_hp] <= 0
+              message += "허수아비의 공격 (#{atk_roll2}+#{atk2}) vs #{attacker_name}의 방어 (#{def_roll2}+#{def_stat2})"
+              message += guard_text
+              message += "\n반격 발생! 허수아비가 5의 반격 피해를 받음 (허수아비 체력 #{state[:dummy_hp]})\n"
+              message += "━━━━━━━━━━━━━━━━━━\n"
+              message += "허수아비를 반격으로 격파했습니다!"
+              reply_to_battle_thread(message, state)
+              BattleState.clear
+              return
+            end
+          end
+          
+          new_hp = [(user["HP"] || 100).to_i - damage2, 0].max
+          @sheet_manager.update_user(user_id, { hp: new_hp })
+          
+          message += "허수아비의 공격 (#{atk_roll2}+#{atk2}) vs #{attacker_name}의 방어 (#{def_roll2}+#{def_stat2})"
+          message += guard_text
+          if counter_happened
+            message += "\n반격 발생! 허수아비가 5의 반격 피해를 받음 (허수아비 체력 #{state[:dummy_hp]})"
+          end
+          message += "\n#{attacker_name} 체력: #{new_hp}\n"
+          message += "━━━━━━━━━━━━━━━━━━\n"
+          
+          if new_hp <= 0
+            message += "#{attacker_name}이(가) 쓰러졌습니다! 허수아비 승리!"
+            reply_to_battle_thread(message, state)
+            BattleState.clear
+          else
+            state[:current_turn] = user_id
+            message += "#{attacker_name}의 차례\n"
+            message += "[공격] [방어] [반격] [물약사용] [도주]"
+            
+            result = reply_to_battle_thread(message, state)
+            state[:last_reply_id] = result if result
+          end
+        else
+          # 플레이어 차례
+          message += "#{attacker_name}의 차례\n"
+          message += "[공격] [방어] [반격] [물약사용] [도주]"
+          
+          result = reply_to_battle_thread(message, state)
+          state[:last_reply_id] = result if result
         end
       end
     else
@@ -302,11 +399,79 @@ class BattleEngine
 
     state[:current_turn] = state[:turn_order][(state[:turn_order].index(state[:current_turn]) + 1) % state[:turn_order].length]
     
-    # 다음 턴이 허수아비면 자동 진행
+    # 다음 턴이 허수아비면 바로 행동 계산
     if state[:current_turn].to_s.include?("허수아비")
-      result = reply_to_battle_thread(message, state)
-      state[:last_reply_id] = result if result
-      dummy_turn
+      # 허수아비 행동 계산
+      difficulty = state[:difficulty]
+      user = @sheet_manager.find_user(user_id)
+      
+      atk = DUMMY_STATS[difficulty][:atk]
+      atk_roll = rand(1..20)
+      atk_total = atk + atk_roll
+      
+      def_stat = (user["방어"] || 10).to_i
+      def_roll = rand(1..20)
+      def_total = def_stat + def_roll
+      damage = [atk_total - def_total, 0].max
+      
+      # 방어 상태 확인
+      guard_text = ""
+      if state.dig(:guarded, user_id)
+        guard_roll = rand(1..20)
+        guard_total = def_stat + guard_roll
+        
+        if guard_total >= atk_total
+          damage = 0
+          guard_text = "\n방어 성공! (#{guard_roll}+#{def_stat}=#{guard_total}) 피해 완전 차단!"
+        else
+          damage = atk_total - guard_total
+          guard_text = "\n방어 실패! (#{guard_roll}+#{def_stat}=#{guard_total}) 피해: #{damage}"
+        end
+        
+        state[:guarded].delete(user_id)
+      end
+      
+      counter_happened = false
+      if state.dig(:counter, user_id) && damage > 0
+        state[:counter].delete(user_id)
+        state[:dummy_hp] -= 5
+        counter_happened = true
+        
+        if state[:dummy_hp] <= 0
+          message += "허수아비의 공격 (#{atk_roll}+#{atk}) vs #{name}의 방어 (#{def_roll}+#{def_stat})"
+          message += guard_text
+          message += "\n반격 발생! 허수아비가 5의 반격 피해를 받음 (허수아비 체력 #{state[:dummy_hp]})\n"
+          message += "━━━━━━━━━━━━━━━━━━\n"
+          message += "허수아비를 반격으로 격파했습니다!"
+          reply_to_battle_thread(message, state)
+          BattleState.clear
+          return
+        end
+      end
+      
+      new_hp = [(user["HP"] || 100).to_i - damage, 0].max
+      @sheet_manager.update_user(user_id, { hp: new_hp })
+      
+      message += "허수아비의 공격 (#{atk_roll}+#{atk}) vs #{name}의 방어 (#{def_roll}+#{def_stat})"
+      message += guard_text
+      if counter_happened
+        message += "\n반격 발생! 허수아비가 5의 반격 피해를 받음 (허수아비 체력 #{state[:dummy_hp]})"
+      end
+      message += "\n#{name} 체력: #{new_hp}\n"
+      message += "━━━━━━━━━━━━━━━━━━\n"
+      
+      if new_hp <= 0
+        message += "#{name}이(가) 쓰러졌습니다! 허수아비 승리!"
+        reply_to_battle_thread(message, state)
+        BattleState.clear
+      else
+        state[:current_turn] = user_id
+        message += "#{name}의 차례\n"
+        message += "[공격] [방어] [반격] [물약사용] [도주]"
+        
+        result = reply_to_battle_thread(message, state)
+        state[:last_reply_id] = result if result
+      end
     else
       # 다음 플레이어 선택지도 함께 표시
       next_player = @sheet_manager.find_user(state[:current_turn])
@@ -336,11 +501,78 @@ class BattleEngine
 
     state[:current_turn] = state[:turn_order][(state[:turn_order].index(state[:current_turn]) + 1) % state[:turn_order].length]
     
-    # 다음 턴이 허수아비면 자동 진행
+    # 다음 턴이 허수아비면 바로 행동 계산
     if state[:current_turn].to_s.include?("허수아비")
-      result = reply_to_battle_thread(message, state)
-      state[:last_reply_id] = result if result
-      dummy_turn
+      # 허수아비 행동 계산 (방어와 동일)
+      difficulty = state[:difficulty]
+      user = @sheet_manager.find_user(user_id)
+      
+      atk = DUMMY_STATS[difficulty][:atk]
+      atk_roll = rand(1..20)
+      atk_total = atk + atk_roll
+      
+      def_stat = (user["방어"] || 10).to_i
+      def_roll = rand(1..20)
+      def_total = def_stat + def_roll
+      damage = [atk_total - def_total, 0].max
+      
+      guard_text = ""
+      if state.dig(:guarded, user_id)
+        guard_roll = rand(1..20)
+        guard_total = def_stat + guard_roll
+        
+        if guard_total >= atk_total
+          damage = 0
+          guard_text = "\n방어 성공! (#{guard_roll}+#{def_stat}=#{guard_total}) 피해 완전 차단!"
+        else
+          damage = atk_total - guard_total
+          guard_text = "\n방어 실패! (#{guard_roll}+#{def_stat}=#{guard_total}) 피해: #{damage}"
+        end
+        
+        state[:guarded].delete(user_id)
+      end
+      
+      counter_happened = false
+      if state.dig(:counter, user_id) && damage > 0
+        state[:counter].delete(user_id)
+        state[:dummy_hp] -= 5
+        counter_happened = true
+        
+        if state[:dummy_hp] <= 0
+          message += "허수아비의 공격 (#{atk_roll}+#{atk}) vs #{name}의 방어 (#{def_roll}+#{def_stat})"
+          message += guard_text
+          message += "\n반격 발생! 허수아비가 5의 반격 피해를 받음 (허수아비 체력 #{state[:dummy_hp]})\n"
+          message += "━━━━━━━━━━━━━━━━━━\n"
+          message += "허수아비를 반격으로 격파했습니다!"
+          reply_to_battle_thread(message, state)
+          BattleState.clear
+          return
+        end
+      end
+      
+      new_hp = [(user["HP"] || 100).to_i - damage, 0].max
+      @sheet_manager.update_user(user_id, { hp: new_hp })
+      
+      message += "허수아비의 공격 (#{atk_roll}+#{atk}) vs #{name}의 방어 (#{def_roll}+#{def_stat})"
+      message += guard_text
+      if counter_happened
+        message += "\n반격 발생! 허수아비가 5의 반격 피해를 받음 (허수아비 체력 #{state[:dummy_hp]})"
+      end
+      message += "\n#{name} 체력: #{new_hp}\n"
+      message += "━━━━━━━━━━━━━━━━━━\n"
+      
+      if new_hp <= 0
+        message += "#{name}이(가) 쓰러졌습니다! 허수아비 승리!"
+        reply_to_battle_thread(message, state)
+        BattleState.clear
+      else
+        state[:current_turn] = user_id
+        message += "#{name}의 차례\n"
+        message += "[공격] [방어] [반격] [물약사용] [도주]"
+        
+        result = reply_to_battle_thread(message, state)
+        state[:last_reply_id] = result if result
+      end
     else
       # 다음 플레이어 선택지도 함께 표시
       next_player = @sheet_manager.find_user(state[:current_turn])
@@ -389,87 +621,9 @@ class BattleEngine
     @mastodon_client.reply_with_mentions(state[:last_reply_id], message, participants)
   end
 
-  # === 허수아비 행동 ===
+  # === 허수아비 행동 (사용 안 함 - attack/defend/counter에서 직접 처리) ===
   def dummy_turn
-    state = BattleState.get
-    return unless state && state[:current_turn].to_s.include?("허수아비")
-
-    difficulty = state[:difficulty]
-    user_id    = state[:participants].find { |p| !p.include?("허수아비") }
-    user       = @sheet_manager.find_user(user_id)
-    return unless user
-
-    user_name  = user["이름"] || user_id
-    atk       = DUMMY_STATS[difficulty][:atk]
-    atk_roll  = rand(1..20)
-    atk_total = atk + atk_roll
-
-    def_stat  = (user["방어"] || 10).to_i
-    def_roll  = rand(1..20)
-    def_total = def_stat + def_roll
-    damage = [atk_total - def_total, 0].max
-
-    # --- 방어/반격 보정 ---
-    guard_text = ""
-    if state.dig(:guarded, user_id)
-      guard_roll = rand(1..20)
-      guard_total = def_stat + guard_roll
-      
-      if guard_total >= atk_total
-        damage = 0
-        guard_text = "\n방어 성공! (#{guard_roll}+#{def_stat}=#{guard_total}) 피해 완전 차단!"
-      else
-        damage = atk_total - guard_total
-        guard_text = "\n방어 실패! (#{guard_roll}+#{def_stat}=#{guard_total}) 피해: #{damage}"
-      end
-      
-      state[:guarded].delete(user_id)
-    end
-
-    counter_happened = false
-    if state.dig(:counter, user_id) && damage > 0
-      state[:counter].delete(user_id)
-      state[:dummy_hp] -= 5
-      counter_happened = true
-
-      if state[:dummy_hp] <= 0
-        message = "허수아비의 공격 (#{atk_roll}+#{atk}) vs #{user_name}의 방어 (#{def_roll}+#{def_stat})"
-        message += guard_text
-        message += "\n반격 발생! 허수아비가 5의 반격 피해를 받음 (허수아비 체력 #{state[:dummy_hp]})\n"
-        message += "━━━━━━━━━━━━━━━━━━\n"
-        message += "허수아비를 반격으로 격파했습니다!"
-        reply_to_battle_thread(message, state)
-        BattleState.clear
-        return
-      end
-    end
-
-    new_hp = [(user["HP"] || 100).to_i - damage, 0].max
-    @sheet_manager.update_user(user_id, { hp: new_hp })
-
-    # 한 툿에 통합
-    message = "허수아비의 공격 (#{atk_roll}+#{atk}) vs #{user_name}의 방어 (#{def_roll}+#{def_stat})"
-    message += guard_text
-    if counter_happened
-      message += "\n반격 발생! 허수아비가 5의 반격 피해를 받음 (허수아비 체력 #{state[:dummy_hp]})"
-    end
-    message += "\n#{user_name} 체력: #{new_hp}\n"
-    message += "━━━━━━━━━━━━━━━━━━\n"
-
-    if new_hp <= 0
-      message += "#{user_name}이(가) 쓰러졌습니다! 허수아비 승리!"
-      reply_to_battle_thread(message, state)
-      BattleState.clear
-    else
-      state[:current_turn] = state[:turn_order][(state[:turn_order].index(state[:current_turn]) + 1) % state[:turn_order].length]
-      
-      # 플레이어 차례로 넘어가면 선택지도 함께 표시
-      message += "#{user_name}의 차례\n"
-      message += "[공격] [방어] [반격] [물약사용] [도주]"
-      
-      result = reply_to_battle_thread(message, state)
-      state[:last_reply_id] = result if result
-    end
+    # 이제 사용하지 않음 - 각 메서드에서 직접 처리
   end
 
   def find_opponent(user_id, state)
