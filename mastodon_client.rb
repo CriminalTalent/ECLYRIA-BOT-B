@@ -12,13 +12,11 @@ class MastodonClient
     @token = token
     @client = Mastodon::REST::Client.new(
       base_url: @base_url,
-      bearer_token: @token,
-      timeout: { connect: 2, read: 5, write: 20 }
+      bearer_token: @token
     )
     @streamer = Mastodon::Streaming::Client.new(
       base_url: @base_url,
-      bearer_token: @token,
-      timeout: { connect: 2, read: 30, write: 20 }
+      bearer_token: @token
     )
 
     # 봇 계정 username 설정 (환경변수 또는 기본값)
@@ -160,6 +158,7 @@ class MastodonClient
       
       # 생성된 status ID 반환 (해시 형태로)
       return { id: result.id.to_s } if result
+      nil
     rescue => e
       puts "[에러] 멘션 답글 실패: #{e.message}"
       puts e.backtrace.first(3)
