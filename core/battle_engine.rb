@@ -59,23 +59,40 @@ class BattleEngine
       return
     end
 
-    agility_rolls = users.map.with_index { |user, idx| [idx, (user["민첩"] || 10).to_i + rand(1..20)] }
-    turn_order_indices = agility_rolls.sort_by { |_, agi| -agi }.map(&:first)
-    turn_order = turn_order_indices.map { |i| ids[i] }
+    # 팀별 민첩 합산
+    team1_agi = (users[0]["민첩"] || 10).to_i + (users[1]["민첩"] || 10).to_i + rand(1..20)
+    team2_agi = (users[2]["민첩"] || 10).to_i + (users[3]["민첩"] || 10).to_i + rand(1..20)
+    
+    # 팀 내부 턴 순서 (민첩 높은 순)
+    team1_order = [0, 1].sort_by { |i| -(users[i]["민첩"] || 10).to_i }.map { |i| ids[i] }
+    team2_order = [2, 3].sort_by { |i| -(users[i]["민첩"] || 10).to_i }.map { |i| ids[i] }
+    
+    # 선공 팀 결정
+    if team1_agi >= team2_agi
+      first_team = :team1
+      turn_order = team1_order + team2_order
+    else
+      first_team = :team2
+      turn_order = team2_order + team1_order
+    end
 
     names = users.map { |u| (u && u["이름"]) || "(미등록)" }
-    seq_names = turn_order.map { |id| (@sheet_manager.find_user(id) || {})["이름"] || id }
-    first_player_name = seq_names.first
+    first_team_name = first_team == :team1 ? "팀1" : "팀2"
     
     message = "━━━━━━━━━━━━━━━━━━\n"
     message += "2:2 팀 전투 시작\n"
     message += "팀1: #{names[0]}, #{names[1]}\n"
     message += "팀2: #{names[2]}, #{names[3]}\n"
-    message += "턴 순서: #{seq_names.join(' → ')}\n"
+    message += "선공 판정: 팀1(#{team1_agi}) vs 팀2(#{team2_agi})\n"
+    message += "선공: #{first_team_name}\n"
     message += "━━━━━━━━━━━━━━━━━━\n"
+    message += "라운드 1 시작\n"
+    
+    # 첫 번째 플레이어
+    first_player = @sheet_manager.find_user(turn_order[0])
+    first_player_name = first_player["이름"] || turn_order[0]
     message += "#{first_player_name}의 차례\n"
-    message += "[공격/@타겟] [방어] [반격] [물약사용] [도주]\n"
-    message += "타겟 지정 예: [공격/@#{ids[2] == turn_order[0] ? ids[0] : ids[2]}]"
+    message += "[공격/@타겟] [방어] [반격] [물약사용] [도주]"
 
     @mastodon_client.reply_with_mentions(reply_status, message, ids)
 
@@ -85,6 +102,9 @@ class BattleEngine
       teams: { team1: [user1_id, user2_id], team2: [user3_id, user4_id] },
       turn_order: turn_order,
       current_turn: turn_order[0],
+      round: 1,
+      turn_index: 0,
+      actions_queue: [],  # 행동 큐
       guarded: {},
       counter: {},
       last_action_time: Time.now,
@@ -144,33 +164,15 @@ class BattleEngine
     attacker = @sheet_manager.find_user(user_id)
     return unless attacker
 
-    # 타겟 결정
-    if target_id
-      # 명시적 타겟 지정
-      unless state[:participants].include?(target_id)
-        reply_to_battle_thread("잘못된 타겟입니다.", state)
-        return
-      end
-      
-      # 아군 공격 방지
-      if state[:type] == "2v2"
-        my_team = state[:teams][:team1].include?(user_id) ? :team1 : :team2
-        if state[:teams][my_team].include?(target_id)
-          reply_to_battle_thread("아군을 공격할 수 없습니다!", state)
-          return
-        end
-      end
-      
-      defender_id = target_id
-    else
-      # 자동 타겟 선택
-      defender_id = find_opponent(user_id, state)
-    end
-
-    if state[:type] == "dummy"
+    if state[:type] == "2v2"
+      # 2:2 전투는 행동 큐에 추가
+      handle_2v2_action(user_id, :attack, target_id, state)
+    elsif state[:type] == "dummy"
       perform_player_attack_on_dummy(user_id, attacker, state)
     else
-      perform_player_attack(user_id, attacker, defender_id, state)
+      # 1:1 전투
+      target_id ||= find_opponent(user_id, state)
+      perform_player_attack(user_id, attacker, target_id, state)
     end
   end
 
@@ -178,6 +180,12 @@ class BattleEngine
   def defend(user_id)
     state = BattleState.get
     return unless state && state[:current_turn] == user_id
+
+    if state[:type] == "2v2"
+      # 2:2 전투는 행동 큐에 추가
+      handle_2v2_action(user_id, :defend, nil, state)
+      return
+    end
 
     state[:guarded] ||= {}
     state[:guarded][user_id] = true
@@ -209,6 +217,12 @@ class BattleEngine
   def counter(user_id)
     state = BattleState.get
     return unless state && state[:current_turn] == user_id
+
+    if state[:type] == "2v2"
+      # 2:2 전투는 행동 큐에 추가
+      handle_2v2_action(user_id, :counter, nil, state)
+      return
+    end
 
     state[:counter] ||= {}
     state[:counter][user_id] = true
@@ -292,6 +306,220 @@ class BattleEngine
   end
 
   private
+
+  # === 2:2 행동 처리 ===
+  def handle_2v2_action(user_id, action_type, target_id, state)
+    # 타겟 검증 (공격일 경우)
+    if action_type == :attack
+      if target_id
+        unless state[:participants].include?(target_id)
+          reply_to_battle_thread("잘못된 타겟입니다.", state)
+          return
+        end
+        
+        my_team = state[:teams][:team1].include?(user_id) ? :team1 : :team2
+        if state[:teams][my_team].include?(target_id)
+          reply_to_battle_thread("아군을 공격할 수 없습니다!", state)
+          return
+        end
+      else
+        # 타겟 자동 선택
+        target_id = find_opponent(user_id, state)
+      end
+    end
+
+    # 행동 큐에 추가
+    state[:actions_queue] ||= []
+    state[:actions_queue] << {
+      user_id: user_id,
+      action: action_type,
+      target: target_id
+    }
+
+    user = @sheet_manager.find_user(user_id)
+    user_name = user["이름"] || user_id
+    
+    # 행동 확인 메시지
+    action_text = case action_type
+                  when :attack
+                    target_name = (@sheet_manager.find_user(target_id) || {})["이름"] || target_id
+                    "#{user_name}이(가) #{target_name}을(를) 공격 준비"
+                  when :defend
+                    "#{user_name}이(가) 방어 태세"
+                  when :counter
+                    "#{user_name}이(가) 반격 태세"
+                  end
+    
+    message = "#{action_text}\n"
+    message += "━━━━━━━━━━━━━━━━━━\n"
+
+    # 턴 진행
+    state[:turn_index] += 1
+    
+    # 모든 플레이어가 행동했는지 확인
+    if state[:turn_index] >= 4
+      # 라운드 종료 - 결과 일괄 처리
+      process_2v2_round(state, message)
+    else
+      # 다음 플레이어 턴
+      state[:current_turn] = state[:turn_order][state[:turn_index]]
+      next_player = @sheet_manager.find_user(state[:current_turn])
+      next_player_name = next_player["이름"] || state[:current_turn]
+      
+      message += "#{next_player_name}의 차례\n"
+      message += "[공격/@타겟] [방어] [반격] [물약사용] [도주]"
+      
+      reply_to_battle_thread(message, state)
+    end
+  end
+
+  # === 2:2 라운드 결과 처리 ===
+  def process_2v2_round(state, prefix_message)
+    message = prefix_message
+    message += "\n라운드 #{state[:round]} 결과\n"
+    message += "━━━━━━━━━━━━━━━━━━\n\n"
+
+    # 방어/반격 태세 먼저 적용
+    state[:actions_queue].each do |action|
+      if action[:action] == :defend
+        state[:guarded] ||= {}
+        state[:guarded][action[:user_id]] = true
+      elsif action[:action] == :counter
+        state[:counter] ||= {}
+        state[:counter][action[:user_id]] = true
+      end
+    end
+
+    # 공격 처리
+    state[:actions_queue].each do |action|
+      next unless action[:action] == :attack
+      
+      attacker = @sheet_manager.find_user(action[:user_id])
+      defender = @sheet_manager.find_user(action[:target])
+      
+      next unless attacker && defender
+      
+      result = calculate_attack_result(attacker, action[:user_id], defender, action[:target], state)
+      message += result[:message] + "\n"
+      
+      # HP 업데이트
+      if result[:damage] > 0
+        new_hp = [(defender["HP"] || 100).to_i - result[:damage], 0].max
+        @sheet_manager.update_user(action[:target], { hp: new_hp })
+      end
+      
+      # 반격 처리
+      if result[:counter_damage] > 0
+        attacker_new_hp = [(attacker["HP"] || 100).to_i - result[:counter_damage], 0].max
+        @sheet_manager.update_user(action[:user_id], { hp: attacker_new_hp })
+      end
+    end
+
+    message += "━━━━━━━━━━━━━━━━━━\n"
+
+    # 승패 확인
+    team1_alive = state[:teams][:team1].count do |pid|
+      u = @sheet_manager.find_user(pid)
+      u && (u["HP"] || 0).to_i > 0
+    end
+    
+    team2_alive = state[:teams][:team2].count do |pid|
+      u = @sheet_manager.find_user(pid)
+      u && (u["HP"] || 0).to_i > 0
+    end
+
+    if team1_alive == 0
+      message += "팀2 승리!"
+      reply_to_battle_thread(message, state)
+      BattleState.clear
+      return
+    elsif team2_alive == 0
+      message += "팀1 승리!"
+      reply_to_battle_thread(message, state)
+      BattleState.clear
+      return
+    end
+
+    # 다음 라운드 준비
+    state[:round] += 1
+    state[:turn_index] = 0
+    state[:actions_queue] = []
+    state[:guarded] = {}
+    state[:counter] = {}
+    state[:current_turn] = state[:turn_order][0]
+
+    first_player = @sheet_manager.find_user(state[:current_turn])
+    first_player_name = first_player["이름"] || state[:current_turn]
+    
+    message += "\n라운드 #{state[:round]} 시작\n"
+    message += "#{first_player_name}의 차례\n"
+    message += "[공격/@타겟] [방어] [반격] [물약사용] [도주]"
+
+    reply_to_battle_thread(message, state)
+  end
+
+  # === 공격 결과 계산 (2:2용) ===
+  def calculate_attack_result(attacker, attacker_id, defender, defender_id, state)
+    attacker_name = attacker["이름"] || attacker_id
+    defender_name = defender["이름"] || defender_id
+    
+    atk = (attacker["공격"] || 10).to_i
+    atk_roll = rand(1..20)
+    luck = (attacker["행운"] || 10).to_i
+    
+    crit_result = check_critical_hit(luck)
+    atk_total = atk + atk_roll
+    
+    def_stat = (defender["방어"] || 10).to_i
+    def_roll = rand(1..20)
+    def_total = def_stat + def_roll
+    damage = [atk_total - def_total, 0].max
+    
+    if crit_result[:is_crit]
+      damage = (damage * 1.5).to_i
+    end
+
+    guard_text = ""
+    if state.dig(:guarded, defender_id)
+      guard_roll = rand(1..20)
+      guard_total = def_stat + guard_roll
+      
+      if guard_total >= atk_total
+        damage = 0
+        guard_text = " / 방어 성공! (#{guard_roll}+#{def_stat}=#{guard_total}) 피해 차단"
+      else
+        damage = atk_total - guard_total
+        if crit_result[:is_crit]
+          damage = (damage * 1.5).to_i
+        end
+        guard_text = " / 방어 실패 (#{guard_roll}+#{def_stat}=#{guard_total})"
+      end
+    end
+
+    counter_damage = 0
+    counter_text = ""
+    if state.dig(:counter, defender_id) && damage > 0
+      counter_damage = 5
+      counter_text = " / 반격 5"
+    end
+
+    message = "#{attacker_name} → #{defender_name}: (#{atk_roll}+#{atk})"
+    message += " [치명타!]" if crit_result[:is_crit]
+    message += " vs (#{def_roll}+#{def_stat})"
+    message += guard_text
+    message += " = 데미지 #{damage}"
+    message += counter_text
+    
+    current_hp = (defender["HP"] || 100).to_i
+    new_hp = [current_hp - damage, 0].max
+    message += " (#{defender_name} #{new_hp}/100)"
+
+    {
+      message: message,
+      damage: damage,
+      counter_damage: counter_damage
+    }
+  end
 
   # === 치명타 판정 ===
   def check_critical_hit(luck)
