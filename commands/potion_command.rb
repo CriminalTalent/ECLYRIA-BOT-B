@@ -32,64 +32,37 @@ class PotionCommand
       return
     end
 
-    # 아이템 확인
     items = user["아이템"] || user[:items] || ""
     
-    # 물약이 하나도 없으면 (어떤 종류든)
     unless items.include?("물약")
       user_name = user["이름"] || user[:name] || user_id
-      message = "#{user_name}은(는) 물약이 없습니다! 턴을 넘깁니다.\n"
-      message += "━━━━━━━━━━━━━━━━━━\n"
       
-      # 턴 넘기기
-      state[:current_turn] = state[:turn_order][(state[:turn_order].index(state[:current_turn]) + 1) % state[:turn_order].length]
-      
-      # 다음 턴 안내
-      if state[:current_turn].to_s.include?("허수아비")
-        reply_to_battle(message, state)
+      if state[:type] == "2v2"
+        # 2:2는 행동 큐에 실패 기록 후 넘김
+        handle_failed_potion_2v2(user_id, user_name, state)
       else
-        next_player = @sheet_manager.find_user(state[:current_turn])
-        next_player_name = next_player ? (next_player["이름"] || next_player[:name] || state[:current_turn]) : state[:current_turn]
-        
-        message += "#{next_player_name}의 차례\n"
-        message += "[공격] [방어] [반격] [물약사용] [도주]"
-        
-        reply_to_battle(message, state)
+        # 1:1은 즉시 처리
+        handle_failed_potion_1v1(user_id, user_name, state)
       end
       return
     end
     
-    # 보유한 물약 목록 추출
     available_potions = []
     POTION_TYPES.keys.each do |potion|
       available_potions << potion if items.include?(potion)
     end
 
-    # 물약이 하나도 없으면 자동으로 턴 넘김
     if available_potions.empty?
       user_name = user["이름"] || user[:name] || user_id
-      message = "#{user_name}은(는) 사용 가능한 물약이 없습니다! 턴을 넘깁니다.\n"
-      message += "━━━━━━━━━━━━━━━━━━\n"
       
-      # 턴 넘기기
-      state[:current_turn] = state[:turn_order][(state[:turn_order].index(state[:current_turn]) + 1) % state[:turn_order].length]
-      
-      # 다음 턴 안내
-      if state[:current_turn].to_s.include?("허수아비")
-        reply_to_battle(message, state)
+      if state[:type] == "2v2"
+        handle_failed_potion_2v2(user_id, user_name, state)
       else
-        next_player = @sheet_manager.find_user(state[:current_turn])
-        next_player_name = next_player ? (next_player["이름"] || next_player[:name] || state[:current_turn]) : state[:current_turn]
-        
-        message += "#{next_player_name}의 차례\n"
-        message += "[공격] [방어] [반격] [물약사용] [도주]"
-        
-        reply_to_battle(message, state)
+        handle_failed_potion_1v1(user_id, user_name, state)
       end
       return
     end
 
-    # 물약 타입이 지정되지 않았으면 선택지 제공
     if potion_type.nil?
       user_name = user["이름"] || user[:name] || user_id
       message = "#{user_name}의 물약 목록:\n"
@@ -108,7 +81,6 @@ class PotionCommand
       return
     end
 
-    # 지정된 물약 타입 찾기
     potion_found = nil
     case potion_type
     when /소형/i
@@ -121,7 +93,6 @@ class PotionCommand
       potion_found = "물약" if items.include?("물약")
     end
 
-    # 해당 물약이 없으면 메시지만 표시 (턴은 유지)
     unless potion_found
       user_name = user["이름"] || user[:name] || user_id
       message = "#{user_name}은(는) 해당 종류의 물약이 없습니다.\n"
@@ -131,34 +102,97 @@ class PotionCommand
     end
 
     heal_amount = POTION_TYPES[potion_found]
-
-    # 회복 처리
     current_hp = (user["HP"] || user[:hp] || 100).to_i
     new_hp = [current_hp + heal_amount, 100].min
     actual_heal = new_hp - current_hp
 
-    # HP 업데이트
     @sheet_manager.update_user(user_id, { hp: new_hp })
-
-    # 아이템에서 물약 제거
     new_items = items.sub(potion_found, "").gsub(/,+/, ",").gsub(/^,|,$/, "").strip
     @sheet_manager.update_user(user_id, { items: new_items })
 
     user_name = user["이름"] || user[:name] || user_id
-    message = "#{user_name}이(가) #{potion_found}을 사용했습니다.\n"
-    message += "회복: #{actual_heal} (#{current_hp} → #{new_hp})\n"
-    message += "━━━━━━━━━━━━━━━━━━\n"
+    
+    if state[:type] == "2v2"
+      # 2:2는 행동으로 기록 후 턴 진행
+      message = "#{user_name}이(가) #{potion_found}을 사용했습니다.\n"
+      message += "회복: #{actual_heal} (#{current_hp} → #{new_hp})\n"
+      message += "━━━━━━━━━━━━━━━━━━\n"
+      
+      # 일단 물약은 즉시 처리 (행동 큐에 넣지 않음)
+      state[:turn_index] += 1
+      
+      if state[:turn_index] >= 4
+        # 라운드 종료
+        require_relative '../core/battle_engine'
+        engine = BattleEngine.new(@mastodon_client, @sheet_manager)
+        engine.send(:process_2v2_round, state, message)
+      else
+        state[:current_turn] = state[:turn_order][state[:turn_index]]
+        next_player = @sheet_manager.find_user(state[:current_turn])
+        next_player_name = next_player["이름"] || state[:current_turn]
+        
+        message += "#{next_player_name}의 차례\n"
+        message += "[공격/@타겟] [방어] [반격] [물약사용] [도주]"
+        
+        reply_to_battle(message, state)
+      end
+    else
+      # 1:1/허수아비는 기존 로직
+      message = "#{user_name}이(가) #{potion_found}을 사용했습니다.\n"
+      message += "회복: #{actual_heal} (#{current_hp} → #{new_hp})\n"
+      message += "━━━━━━━━━━━━━━━━━━\n"
 
-    # 턴 넘기기
+      state[:current_turn] = state[:turn_order][(state[:turn_order].index(state[:current_turn]) + 1) % state[:turn_order].length]
+      
+      if state[:current_turn].to_s.include?("허수아비")
+        reply_to_battle(message, state)
+      else
+        next_player = @sheet_manager.find_user(state[:current_turn])
+        next_player_name = next_player ? (next_player["이름"] || state[:current_turn]) : state[:current_turn]
+        
+        message += "#{next_player_name}의 차례\n"
+        message += "[공격] [방어] [반격] [물약사용] [도주]"
+        
+        reply_to_battle(message, state)
+      end
+    end
+  end
+
+  private
+
+  def handle_failed_potion_2v2(user_id, user_name, state)
+    message = "#{user_name}은(는) 물약이 없습니다!\n"
+    message += "━━━━━━━━━━━━━━━━━━\n"
+    
+    state[:turn_index] += 1
+    
+    if state[:turn_index] >= 4
+      require_relative '../core/battle_engine'
+      engine = BattleEngine.new(@mastodon_client, @sheet_manager)
+      engine.send(:process_2v2_round, state, message)
+    else
+      state[:current_turn] = state[:turn_order][state[:turn_index]]
+      next_player = @sheet_manager.find_user(state[:current_turn])
+      next_player_name = next_player["이름"] || state[:current_turn]
+      
+      message += "#{next_player_name}의 차례\n"
+      message += "[공격/@타겟] [방어] [반격] [물약사용] [도주]"
+      
+      reply_to_battle(message, state)
+    end
+  end
+
+  def handle_failed_potion_1v1(user_id, user_name, state)
+    message = "#{user_name}은(는) 물약이 없습니다! 턴을 넘깁니다.\n"
+    message += "━━━━━━━━━━━━━━━━━━\n"
+    
     state[:current_turn] = state[:turn_order][(state[:turn_order].index(state[:current_turn]) + 1) % state[:turn_order].length]
     
-    # 다음 턴이 허수아비면 자동 진행
     if state[:current_turn].to_s.include?("허수아비")
       reply_to_battle(message, state)
     else
-      # 다음 플레이어 선택지 표시
       next_player = @sheet_manager.find_user(state[:current_turn])
-      next_player_name = next_player ? (next_player["이름"] || next_player[:name] || state[:current_turn]) : state[:current_turn]
+      next_player_name = next_player ? (next_player["이름"] || state[:current_turn]) : state[:current_turn]
       
       message += "#{next_player_name}의 차례\n"
       message += "[공격] [방어] [반격] [물약사용] [도주]"
@@ -167,9 +201,6 @@ class PotionCommand
     end
   end
 
-  private
-
-  # === 전투 스레드에 답글 (참여자 멘션) ===
   def reply_to_battle(message, state)
     return unless state[:reply_status]
     participants = state[:participants].reject { |p| p.include?("허수아비") }
