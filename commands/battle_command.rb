@@ -27,8 +27,8 @@ class BattleCommand
       puts "[BattleCommand] -> start_1v1 #{u1} vs #{u2}"
       @engine.start_1v1(u1, u2, reply_status)
     
-    # === 2:2 전투 (다인전투) ===
-    when /\A\[다인전투\s+@?(\S+)\s+@?(\S+)\s+vs\s+@?(\S+)\s+@?(\S+)\]\z/i
+    # === 2:2 전투 (다인전투) - 슬래시 구분 형식 ===
+    when /\A\[다인전투\/@?(\S+)\/@?(\S+)\/@?(\S+)\/@?(\S+)\]\z/i
       a, b, c, d = $1, $2, $3, $4
       u1, u2, u3, u4 = [a, b, c, d].map { |x| sanitize.call(x) }
       if [u1, u2, u3, u4].any?(&:empty?)
@@ -38,7 +38,7 @@ class BattleCommand
       puts "[BattleCommand] -> start_2v2 #{u1}, #{u2} vs #{u3}, #{u4}"
       @engine.start_2v2(u1, u2, u3, u4, reply_status)
     
-    # === 타겟 지정 공격 (신규) ===
+    # === 타겟 지정 공격 ===
     when /\[공격\/@?(\S+)\]/i
       target = sanitize.call($1)
       puts "[BattleCommand] -> attack with target: #{target}"
