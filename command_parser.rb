@@ -57,7 +57,7 @@ class CommandParser
 
     when /\[다인전투((?:\/@?\S+)+)\]/i
       participants_text = Regexp.last_match(1)
-      participants = participants_text.scan(/@?(\S+)/).flatten.map(&:strip)
+      participants = participants_text.split('/').map(&:strip).reject(&:empty?).map { |p| p.gsub('@', '') }
       
       puts "[DEBUG] 다인전투 매칭! participants_text: #{participants_text}"
       puts "[DEBUG] participants: #{participants.inspect}"
