@@ -59,9 +59,15 @@ class CommandParser
       participants_text = Regexp.last_match(1)
       participants = participants_text.scan(/@?(\S+)/).flatten.map(&:strip)
       
+      puts "[DEBUG] 다인전투 매칭! participants_text: #{participants_text}"
+      puts "[DEBUG] participants: #{participants.inspect}"
+      puts "[DEBUG] participants.length: #{participants.length}"
+      
       if participants.length == 4
+        puts "[DEBUG] 4명 확인, battle_command 호출"
         @battle_command.handle_command(user_id, "[다인전투/#{participants.join('/')}]", reply_status)
       else
+        puts "[DEBUG] 인원 부족/초과, 에러 메시지 전송"
         @mastodon_client.reply(reply_status, "@#{user_id} 다인전투는 정확히 4명이 필요합니다. (현재: #{participants.length}명)")
       end
 
