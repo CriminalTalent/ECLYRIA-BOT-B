@@ -18,15 +18,12 @@ class CommandParser
     @hp_command = HpCommand.new(mastodon_client, sheet_manager)
   end
 
-  # 해시 형태의 status를 받아서 처리
   def handle(status)
-    # HTML 태그 제거 및 텍스트 추출
     content = status[:content]
     text = content.gsub(/<[^>]+>/, '').strip
 
     user_id = status[:account][:acct]
 
-    # status 자체를 reply_status로 전달 (해시 형태)
     parse(text, user_id, status)
   end
 
@@ -35,49 +32,88 @@ class CommandParser
     puts "[전투봇] 명령 수신: #{text} (from @#{user_id})"
 
     case text
-    # === 체력 확인 ===
     when /\[체력\]/i
       @hp_command.check_hp(user_id, reply_status)
 
-    # === 물약 사용 (전투 외) - 선택 가능 ===
+    when /\[회복\/(\S+)\/@?(\S+)\]/i, /\[힐\/(\S+)\/@?(\S+)\]/i
+      potion_type = Regexp.last_match(1)
+      target = Regexp.last_match(2)
+      @heal_command.use_potion_for_target(user_id, reply_status, potion_type, target)
+
+    when /\[회복\/@?(\S+)\]/i, /\[힐\/@?(\S+)\]/i
+      target = Regexp.last_match(1)
+      @heal_command.use_potion_for_target(user_id, reply_status, nil, target)
+
     when /\[회복\/(\S+)\]/i, /\[힐\/(\S+)\]/i
       potion_type = Regexp.last_match(1)
       @heal_command.use_potion(user_id, reply_status, potion_type)
-    
+
     when /\[회복\]/i, /\[힐\]/i
       @heal_command.use_potion(user_id, reply_status)
 
-    # === 전투 관련 ===
     when /\[전투개시\/@?(\S+)\]/i
       target = Regexp.last_match(1)
       @battle_command.handle_command(user_id, "[전투 #{user_id} vs #{target}]", reply_status)
 
-    when /\[전투개시\/@?(\S+)\/@?(\S+)\/@?(\S+)\/@?(\S+)\]/i
-      u1, u2, u3, u4 = Regexp.last_match.captures
-      @battle_command.handle_command(user_id, "[전투 #{u1} #{u2} vs #{u3} #{u4}]", reply_status)
+    when /\[다인전투((?:\/@?\S+)+)\]/i
+      participants_text = Regexp.last_match(1)
+      participants = participants_text.scan(/@?(\S+)/).flatten.map(&:strip)
+      
+      if participants.length == 4
+        @battle_command.handle_command(user_id, "[다인전투/#{participants.join('/')}]", reply_status)
+      else
+        @mastodon_client.reply(reply_status, "@#{user_id} 다인전투는 정확히 4명이 필요합니다. (현재: #{participants.length}명)")
+      end
 
     when /\[허수아비\s*(하|중|상)\]/i
       diff = Regexp.last_match(1)
       @battle_command.handle_command(user_id, "[허수아비 #{diff}]", reply_status)
 
-    when /\[(공격|방어|반격|도주)\]/i
-      action = Regexp.last_match(1)
-      @battle_command.handle_command(user_id, "[#{action}]", reply_status)
+    when /\[공격\/@?(\S+)\]/i
+      target = Regexp.last_match(1)
+      @battle_command.handle_command(user_id, "[공격/#{target}]", reply_status)
 
-    # === 물약 사용 (전투 중) - 선택 가능 ===
+    when /\[공격\]/i
+      @battle_command.handle_command(user_id, "[공격]", reply_status)
+
+    when /\[방어\/@?(\S+)\]/i
+      target = Regexp.last_match(1)
+      @battle_command.handle_command(user_id, "[방어/#{target}]", reply_status)
+
+    when /\[방어\]/i
+      @battle_command.handle_command(user_id, "[방어]", reply_status)
+
+    when /\[반격\]/i
+      @battle_command.handle_command(user_id, "[반격]", reply_status)
+
+    when /\[도주\]/i
+      @battle_command.handle_command(user_id, "[도주]", reply_status)
+
+    when /\[물약사용\/(\S+)\/@?(\S+)\]/i
+      potion_type = Regexp.last_match(1)
+      target = Regexp.last_match(2)
+      @potion_command.use_potion_for_target(user_id, reply_status, potion_type, target)
+
+    when /\[물약사용\/@?(\S+)\]/i
+      target = Regexp.last_match(1)
+      @potion_command.use_potion_for_target(user_id, reply_status, nil, target)
+
     when /\[물약사용\/(\S+)\]/i
       potion_type = Regexp.last_match(1)
       @potion_command.use_potion(user_id, reply_status, potion_type)
-    
+
     when /\[물약사용\]/i
       @potion_command.use_potion(user_id, reply_status)
 
     when /\[전투중단\]/i
-      @mastodon_client.reply(reply_status, "전투가 총괄에 의해 중단되었습니다.")
       require_relative 'core/battle_state'
-      BattleState.clear
+      if BattleState.get && !BattleState.get.empty?
+        @mastodon_client.reply(reply_status, "전투가 중단되었습니다.")
+        BattleState.clear
+      else
+        @mastodon_client.reply(reply_status, "진행 중인 전투가 없습니다.")
+      end
 
-    # === 조사 관련 ===
     when /\[조사시작\]/i,
          /\[조사\/.+\]/i,
          /\[세부조사\/.+\]/i,
@@ -88,13 +124,11 @@ class CommandParser
          /\[조사종료\]/i
       @investigate_command.execute(text, user_id, reply_status)
 
-    # === DM 조사결과 전송 ===
     when /DM조사결과\s+@(\S+)\s+(.+)/i
       @dm_investigation_command.send_result(text, user_id, reply_status)
 
     else
       puts "[무시] 인식되지 않은 명령: #{text}"
-      # 명령어가 없으면 무시 (대사만 있는 경우)
     end
 
   rescue => e
@@ -106,7 +140,6 @@ class CommandParser
   private
 
   def handle_location_overview(location, user_id, reply_status)
-    # 조사상태 시트에 위치 반영 (없으면 추가, 있으면 갱신)
     @sheet_manager.upsert_investigation_state(user_id, "조사중", location)
 
     unless @sheet_manager.is_location?(location)
