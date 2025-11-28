@@ -1,4 +1,3 @@
-# mastodon_client.rb
 require 'mastodon'
 require 'json'
 require 'net/http'
@@ -19,15 +18,11 @@ class MastodonClient
       bearer_token: @token
     )
 
-    # 봇 계정 username 설정 (환경변수 또는 기본값)
     @bot_username = (ENV['BOT_USERNAME'] || 'battle').downcase
     @bot_acct = @bot_username
     puts "[봇 계정] @#{@bot_username}"
   end
 
-  # ==========================================
-  #  🔥 폴링 방식으로 알림 가져오기 (백업용)
-  # ==========================================
   def notifications(limit: 40)
     uri = URI("#{@base_url}/api/v1/notifications?limit=#{limit}")
     request = Net::HTTP::Get.new(uri)
@@ -48,25 +43,17 @@ class MastodonClient
     []
   end
 
-  # ==========================================
-  #  🔥 안정형 stream_user (@Battle 멘션만 처리)
-  # ==========================================
   def stream_user(&block)
     puts "[마스토돈] user 스트림 구독 시작... (@#{@bot_username} 멘션만 처리)"
 
     @streamer.user do |event|
       begin
-        # event가 Mastodon::Status 객체인 경우
         if event.is_a?(Mastodon::Status)
-          # 해시로 변환 (깊은 변환)
           status = deep_symbolize(event.to_h)
 
-          # 발신자 정보 확인
           next unless status[:account] && status[:account][:acct]
 
-          # DM 처리 - 자신에게 온 DM만
           if status[:visibility] == "direct"
-            # mentions 배열에서 @Battle이 있는지 확인
             if status[:mentions] && status[:mentions].any?
               has_battle_mention = status[:mentions].any? do |mention|
                 mention[:username].to_s.downcase == @bot_username.downcase ||
@@ -80,9 +67,7 @@ class MastodonClient
             next
           end
 
-          # 멘션 처리 - @Battle 멘션이 있는지 확인
           if status[:mentions] && status[:mentions].any?
-            # mentions 배열에서 @Battle이 있는지 확인
             has_battle_mention = status[:mentions].any? do |mention|
               mention[:username].to_s.downcase == @bot_username.downcase ||
               mention[:acct].to_s.downcase == @bot_acct.downcase
@@ -95,7 +80,6 @@ class MastodonClient
           end
         end
 
-        # event가 Mastodon::Notification 객체인 경우
         if event.is_a?(Mastodon::Notification)
           next unless event.type == "mention"
           next unless event.status
@@ -103,7 +87,6 @@ class MastodonClient
           status = deep_symbolize(event.status.to_h)
           next unless status[:account] && status[:account][:acct]
 
-          # mentions 배열에서 @Battle이 있는지 확인
           if status[:mentions] && status[:mentions].any?
             has_battle_mention = status[:mentions].any? do |mention|
               mention[:username].to_s.downcase == @bot_username.downcase ||
@@ -124,9 +107,6 @@ class MastodonClient
     end
   end
 
-  # ==========================================
-  #  기본 reply (DM은 DM으로, 멘션은 public으로)
-  # ==========================================
   def reply(to_status, text)
     begin
       status_id = to_status.is_a?(Hash) ? to_status[:id] : to_status.id
@@ -134,7 +114,6 @@ class MastodonClient
 
       return unless status_id
 
-      # 문자열로 변환
       status_id = status_id.to_s
 
       result = @client.create_status(
@@ -143,25 +122,31 @@ class MastodonClient
         visibility: visibility == "direct" ? "direct" : "public"
       )
       
-      # 생성된 status ID 반환 (해시 형태로)
       return { id: result.id.to_s } if result
     rescue => e
       puts "[에러] reply 실패: #{e.message}"
       puts e.backtrace.first(3)
+      
+      begin
+        result = @client.create_status(
+          text,
+          visibility: "public"
+        )
+        return { id: result.id.to_s } if result
+      rescue => retry_error
+        puts "[에러] reply 재시도 실패: #{retry_error.message}"
+      end
+      
       nil
     end
   end
 
-  # ==========================================
-  #  전투용 멘션 답글 (참여자 태그)
-  # ==========================================
   def reply_with_mentions(to_status, text, participant_ids)
     begin
       status_id = to_status.is_a?(Hash) ? to_status[:id] : to_status.id
 
       return nil unless status_id
 
-      # 문자열로 변환
       status_id = status_id.to_s
 
       mentions = participant_ids.map { |id| "@#{id}" }.join(' ')
@@ -173,7 +158,6 @@ class MastodonClient
         visibility: "public"
       )
       
-      # 생성된 status ID 반환 (해시 형태로)
       return { id: result.id.to_s } if result
       nil
     rescue => e
@@ -183,9 +167,6 @@ class MastodonClient
     end
   end
 
-  # ==========================================
-  #  공개 포스트
-  # ==========================================
   def post(text, visibility: 'public')
     begin
       @client.create_status(text, visibility: visibility)
@@ -194,9 +175,6 @@ class MastodonClient
     end
   end
 
-  # ==========================================
-  #  DM 전송
-  # ==========================================
   def dm(user_id, text)
     begin
       @client.create_status("@#{user_id} #{text}", visibility: 'direct')
@@ -205,9 +183,6 @@ class MastodonClient
     end
   end
 
-  # ==========================================
-  #  계정 검색
-  # ==========================================
   def account_search(query)
     begin
       results = @client.search(query, resolve: true)
@@ -228,7 +203,6 @@ class MastodonClient
 
   private
 
-  # 깊은 심볼 변환 (중첩된 해시/배열 모두 변환)
   def deep_symbolize(obj)
     case obj
     when Hash
