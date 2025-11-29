@@ -112,7 +112,10 @@ class MastodonClient
       status_id = to_status.is_a?(Hash) ? to_status[:id] : to_status.id
       visibility = to_status.is_a?(Hash) ? to_status[:visibility] : to_status.visibility
 
-      return unless status_id
+      unless status_id
+        puts "[에러] reply: status_id가 없음"
+        return nil
+      end
 
       status_id = status_id.to_s
 
@@ -126,24 +129,22 @@ class MastodonClient
         return { id: result.id.to_s }
       else
         puts "[경고] reply: create_status가 빈 결과 반환"
-        return nil
+        # 독립 게시물로 재시도
+        result2 = @client.create_status(text, visibility: "public")
+        return result2 && result2.id ? { id: result2.id.to_s } : nil
       end
       
     rescue => e
-      puts "[에러] reply 실패: #{e.message}"
+      puts "[에러] reply 실패: #{e.class}: #{e.message}"
       puts e.backtrace.first(3)
       
       begin
-        result = @client.create_status(
-          text,
-          visibility: "public"
-        )
+        result = @client.create_status(text, visibility: "public")
         return result && result.id ? { id: result.id.to_s } : nil
       rescue => retry_error
         puts "[에러] reply 재시도 실패: #{retry_error.message}"
+        return nil
       end
-      
-      nil
     end
   end
 
@@ -151,12 +152,17 @@ class MastodonClient
     begin
       status_id = to_status.is_a?(Hash) ? to_status[:id] : to_status.id
 
-      return nil unless status_id
+      unless status_id
+        puts "[에러] reply_with_mentions: status_id가 없음"
+        return nil
+      end
 
       status_id = status_id.to_s
 
       mentions = participant_ids.map { |id| "@#{id}" }.join(' ')
       full_text = "#{mentions}\n#{text}"
+      
+      puts "[디버그] 답글 전송: status_id=#{status_id}, 길이=#{full_text.length}"
 
       result = @client.create_status(
         full_text,
@@ -164,38 +170,56 @@ class MastodonClient
         visibility: "public"
       )
       
+      puts "[디버그] 결과 타입: #{result.class}"
+      
       if result && result.respond_to?(:id) && result.id
+        puts "[성공] 답글 ID: #{result.id}"
         return { id: result.id.to_s }
       else
-        puts "[경고] reply_with_mentions: create_status가 빈 결과 반환"
-        return nil
-      end
-      
-    rescue Mastodon::Error::UnprocessableEntity => e
-      puts "[에러] 멘션 답글 실패 (422): #{e.message}"
-      # 대안: 독립 게시물로 전송
-      begin
-        mentions = participant_ids.map { |id| "@#{id}" }.join(' ')
-        full_text = "#{mentions}\n#{text}"
-        result = @client.create_status(full_text, visibility: "public")
-        return result && result.id ? { id: result.id.to_s } : nil
-      rescue => retry_error
-        puts "[에러] 독립 게시물도 실패: #{retry_error.message}"
-        return nil
+        puts "[경고] create_status가 빈 결과 반환, 독립 게시물로 재시도"
+        result2 = @client.create_status(full_text, visibility: "public")
+        puts "[디버그] 독립 게시물 결과: #{result2.class}"
+        return result2 && result2.id ? { id: result2.id.to_s } : nil
       end
       
     rescue => e
-      puts "[에러] 멘션 답글 실패: #{e.message}"
-      puts e.backtrace.first(3)
-      nil
+      puts "[에러] reply_with_mentions 실패: #{e.class}: #{e.message}"
+      puts e.backtrace.first(5)
+      
+      # 최후의 수단: 독립 게시물
+      begin
+        puts "[재시도] 독립 게시물로 전송"
+        mentions = participant_ids.map { |id| "@#{id}" }.join(' ')
+        full_text = "#{mentions}\n#{text}"
+        result = @client.create_status(full_text, visibility: "public")
+        
+        if result && result.respond_to?(:id) && result.id
+          puts "[성공] 독립 게시물 ID: #{result.id}"
+          return { id: result.id.to_s }
+        else
+          puts "[실패] 독립 게시물도 빈 결과"
+          return nil
+        end
+      rescue => retry_error
+        puts "[최종 실패] #{retry_error.class}: #{retry_error.message}"
+        puts retry_error.backtrace.first(3)
+        return nil
+      end
     end
   end
 
   def post(text, visibility: 'public')
     begin
-      @client.create_status(text, visibility: visibility)
+      result = @client.create_status(text, visibility: visibility)
+      if result && result.respond_to?(:id) && result.id
+        return { id: result.id.to_s }
+      else
+        puts "[경고] post: 빈 결과 반환"
+        return nil
+      end
     rescue => e
       puts "[에러] post 실패: #{e.message}"
+      return nil
     end
   end
 
