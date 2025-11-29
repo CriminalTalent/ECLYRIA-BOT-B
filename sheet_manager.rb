@@ -98,6 +98,55 @@ class SheetManager
     nil
   end
 
+  # === 사용자 시트에서 아이템 정보 조회 ===
+  def find_user_items(user_id)
+    rows = read_values("사용자!A:Z")
+    return nil unless rows
+
+    headers = rows[0]
+
+    rows.each_with_index do |r, i|
+      next if i == 0
+      if r[0]&.gsub('@', '') == user_id.gsub('@', '')
+        data = {}
+        headers.each_with_index { |h, j| data[h] = r[j] }
+        data[:_row] = i + 1
+        data["_row"] = i + 1
+        return data
+      end
+    end
+    nil
+  end
+
+  # === 사용자 시트 업데이트 ===
+  def update_user_items(user_id, updates)
+    rows = read_values("사용자!A:Z")
+    return false unless rows
+
+    headers = rows[0]
+
+    rows.each_with_index do |row, idx|
+      next if idx == 0
+      next unless row[0]&.gsub('@', '') == user_id.gsub('@', '')
+
+      updates.each do |key, value|
+        header_name = case key.to_sym
+                      when :items then "아이템"
+                      when :galleons then "갈레온"
+                      else key.to_s
+                      end
+
+        col = headers.index(header_name)
+        next unless col
+        row[col] = value
+      end
+
+      update_values("사용자!A#{idx+1}:Z#{idx+1}", [row])
+      return true
+    end
+    false
+  end
+
   # === 사용자 업데이트 ===
   def update_user(user_id, updates)
     rows = read_values("스탯!A:Z")
