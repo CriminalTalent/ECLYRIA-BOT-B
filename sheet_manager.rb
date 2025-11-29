@@ -328,6 +328,28 @@ class SheetManager
     details.uniq
   end
 
+  def users_at_location(location)
+    rows = read_values("조사상태!A:Z")
+    return [] unless rows && !rows.empty?
+    
+    headers = rows[0]
+    location_col = headers.index("위치")
+    return [] unless location_col
+    
+    users = []
+    rows.each_with_index do |row, idx|
+      next if idx == 0  # 헤더 스킵
+      next unless row[location_col]  # 위치가 없으면 스킵
+      
+      # 위치 정규화해서 비교
+      if row[location_col].to_s.strip.gsub(/\p{Cf}/, '') == location.to_s.strip.gsub(/\p{Cf}/, '')
+        users << row[0]  # 사용자 ID
+      end
+    end
+    
+    users.compact
+  end
+
   # === 로그 ===
   def log_investigation(user_id, location, target, kind, success, result)
     time = Time.now.strftime('%Y-%m-%d %H:%M')
