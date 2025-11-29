@@ -192,17 +192,21 @@ class InvestigateCommand
   # === [이동/위치]
   def move_to_location(location, user_id, reply_status)
     state = @sheet_manager.get_investigation_state(user_id)
+    
+    # 위치 유효성 먼저 확인 (포인트 차감 전)
     unless @sheet_manager.is_location?(location)
       @mastodon_client.reply_direct(reply_status, "@#{user_id} #{location}은(는) 이동할 수 있는 위치가 아닙니다.")
       return
     end
 
+    # 포인트 확인
     points = state["이동포인트"].to_i
     if points <= 0
       @mastodon_client.reply_direct(reply_status, "@#{user_id} 이동 포인트가 부족합니다. (하루 3회 한정, 자정에 초기화)")
       return
     end
 
+    # 이동 성공 후 포인트 차감
     new_points = points - 1
     @sheet_manager.update_move_points(user_id, new_points)
     @sheet_manager.update_investigation_state(user_id, "진행중", location)
@@ -220,11 +224,16 @@ class InvestigateCommand
     state = @sheet_manager.get_investigation_state(user_id)
     location = state["위치"] || "-"
     points = state["이동포인트"] || 0
+    status = state["조사상태"] || "없음"
     
     msg = "@#{user_id}\n"
+    msg += "━━━━━━━━━━━━━━━━━━\n"
+    msg += "조사 상태\n"
+    msg += "━━━━━━━━━━━━━━━━━━\n\n"
     msg += "현재 위치: #{location}\n"
     msg += "남은 이동 포인트: #{points}/3\n"
-    msg += "━━━━━━━━━━━━━━━━━━\n"
+    msg += "조사 상태: #{status}\n"
+    msg += "\n━━━━━━━━━━━━━━━━━━\n"
     
     if location != "-"
       msg += "[조사/위치] [세부조사/대상] [이동/위치] [조사종료]"
