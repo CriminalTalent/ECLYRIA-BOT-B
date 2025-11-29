@@ -29,9 +29,13 @@ class CommandParser
 
   def parse(text, user_id, reply_status)
     text = text.strip
-    puts "[전투봇] 명령 수신: #{text} (from @#{user_id})"
+    
+    # 멘션 제거 (명령어만 추출)
+    clean_text = text.gsub(/@\S+\s*/, '').strip
+    
+    puts "[전투봇] 명령 수신: #{clean_text} (from @#{user_id})"
 
-    case text
+    case clean_text
     when /\[체력\]/i
       @hp_command.check_hp(user_id, reply_status)
 
@@ -59,15 +63,9 @@ class CommandParser
       participants_text = Regexp.last_match(1)
       participants = participants_text.split('/').map(&:strip).reject(&:empty?).map { |p| p.gsub('@', '') }
       
-      puts "[DEBUG] 다인전투 매칭! participants_text: #{participants_text}"
-      puts "[DEBUG] participants: #{participants.inspect}"
-      puts "[DEBUG] participants.length: #{participants.length}"
-      
       if participants.length == 4
-        puts "[DEBUG] 4명 확인, battle_command 호출"
         @battle_command.handle_command(user_id, "[다인전투/#{participants.join('/')}]", reply_status)
       else
-        puts "[DEBUG] 인원 부족/초과, 에러 메시지 전송"
         @mastodon_client.reply(reply_status, "@#{user_id} 다인전투는 정확히 4명이 필요합니다. (현재: #{participants.length}명)")
       end
 
@@ -111,7 +109,7 @@ class CommandParser
     when /\[물약사용\]/i
       @potion_command.use_potion(user_id, reply_status)
 
-    when /\[전투중단\]/i
+    when /\[전투\s*중단\]/i, /\[전투중단\]/i
       require_relative 'core/battle_state'
       if BattleState.get && !BattleState.get.empty?
         @mastodon_client.reply(reply_status, "전투가 중단되었습니다.")
@@ -128,13 +126,13 @@ class CommandParser
          /\[협력조사\/.+\/@.+\]/i,
          /\[방해\/@.+\]/i,
          /\[조사종료\]/i
-      @investigate_command.execute(text, user_id, reply_status)
+      @investigate_command.execute(clean_text, user_id, reply_status)
 
     when /DM조사결과\s+@(\S+)\s+(.+)/i
-      @dm_investigation_command.send_result(text, user_id, reply_status)
+      @dm_investigation_command.send_result(clean_text, user_id, reply_status)
 
     else
-      puts "[무시] 인식되지 않은 명령: #{text}"
+      puts "[무시] 인식되지 않은 명령: #{clean_text}"
     end
 
   rescue => e
