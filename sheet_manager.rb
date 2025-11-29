@@ -2,6 +2,8 @@ require 'google/apis/sheets_v4'
 require 'googleauth'
 
 class SheetManager
+  CACHE_DURATION = 5 # 캐시 유효 시간 (초) - API 호출 최소화
+  
   def initialize(sheet_id, credentials_path)
     @sheet_id = sheet_id
     @service = Google::Apis::SheetsV4::SheetsService.new
@@ -9,47 +11,90 @@ class SheetManager
       json_key_io: File.open(credentials_path),
       scope: Google::Apis::SheetsV4::AUTH_SPREADSHEETS
     )
+    
+    # 캐시 저장소
+    @cache = {}
+    @cache_time = {}
+    
+    puts "[SheetManager] 캐시 시스템 활성화 (유효시간: #{CACHE_DURATION}초)"
   end
 
+  # 캐시를 사용하는 read_values
   def read_values(range)
-    @service.get_spreadsheet_values(@sheet_id, range).values
-  rescue
+    # 캐시 확인
+    if @cache[range] && @cache_time[range]
+      elapsed = Time.now - @cache_time[range]
+      if elapsed < CACHE_DURATION
+        puts "[캐시 히트] #{range} (#{elapsed.round(2)}초 전)"
+        return @cache[range]
+      end
+    end
+    
+    # 캐시 미스 - API 호출
+    puts "[API 호출] #{range}"
+    result = @service.get_spreadsheet_values(@sheet_id, range).values
+    
+    # 캐시 저장
+    @cache[range] = result
+    @cache_time[range] = Time.now
+    
+    result
+  rescue => e
+    puts "[에러] read_values 실패: #{e.message}"
     nil
+  end
+  
+  # 캐시 무효화 (데이터 변경 시 호출)
+  def invalidate_cache(range = nil)
+    if range
+      @cache.delete(range)
+      @cache_time.delete(range)
+      puts "[캐시 무효화] #{range}"
+    else
+      @cache.clear
+      @cache_time.clear
+      puts "[캐시 전체 무효화]"
+    end
   end
 
   def update_values(range, values)
     range_obj = Google::Apis::SheetsV4::ValueRange.new(values: values)
-    @service.update_spreadsheet_value(@sheet_id, range, range_obj, value_input_option: 'USER_ENTERED')
+    result = @service.update_spreadsheet_value(@sheet_id, range, range_obj, value_input_option: 'USER_ENTERED')
+    
+    # 업데이트 후 관련 캐시 무효화
+    sheet_name = range.split('!').first
+    invalidate_cache("#{sheet_name}!A:Z")
+    
+    result
   end
 
   def append_values(range, values)
     range_obj = Google::Apis::SheetsV4::ValueRange.new(values: values)
-    @service.append_spreadsheet_value(@sheet_id, range, range_obj, value_input_option: 'USER_ENTERED')
+    result = @service.append_spreadsheet_value(@sheet_id, range, range_obj, value_input_option: 'USER_ENTERED')
+    
+    # 추가 후 관련 캐시 무효화
+    sheet_name = range.split('!').first
+    invalidate_cache("#{sheet_name}!A:Z")
+    
+    result
   end
 
-  # === 사용자 찾기 ===
+  # === 사용자 찾기 (캐시 활용) ===
   def find_user(user_id)
     rows = read_values("스탯!A:Z")
-    puts "[DEBUG] Total rows: #{rows&.length}"
-    puts "[DEBUG] Headers: #{rows&.first&.inspect}"
     return nil unless rows
+    
     headers = rows[0]
     
     rows.each_with_index do |r, i|
       next if i == 0
-      if i <= 3  # 처음 3개만 로그
-        puts "[DEBUG] Row #{i}: ID=#{r[0].inspect}"
-      end
       if r[0]&.gsub('@', '') == user_id.gsub('@', '')
-        puts "[DEBUG] MATCH FOUND at row #{i}!"
-        # 한글 헤더와 영어 키 모두 포함 (양방향 호환)
         h = convert_user_row(headers, r)
         h[:_row] = i + 1
         h["_row"] = i + 1
         return h
       end
     end
-    puts "[DEBUG] No match found for user_id: #{user_id.inspect}"
     nil
   end
 
