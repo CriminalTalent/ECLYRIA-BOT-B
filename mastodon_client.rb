@@ -127,59 +127,39 @@ class MastodonClient
       end
 
       status_id = status_id.to_s
-
       mentions = participant_ids.map { |id| "@#{id}" }.join(' ')
       full_text = "#{mentions}\n#{text}"
       
       puts "[디버그] 답글 전송: status_id=#{status_id}, 길이=#{full_text.length}"
 
-      result = @client.create_status(
-        full_text,
+      # 직접 HTTP 요청 사용 (gem 우회)
+      uri = URI("#{@base_url}/api/v1/statuses")
+      request = Net::HTTP::Post.new(uri)
+      request['Authorization'] = "Bearer #{@token}"
+      request['Content-Type'] = 'application/json'
+      request.body = {
+        status: full_text,
         in_reply_to_id: status_id,
-        visibility: "public"
-      )
-      
-      puts "[디버그] 결과 타입: #{result.class}"
-      
-      if result && result.respond_to?(:id) && result.id
-        puts "[성공] 답글 ID: #{result.id}"
-        return { id: result.id.to_s }
+        visibility: 'public'
+      }.to_json
+
+      response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true) do |http|
+        http.request(request)
+      end
+
+      if response.code == '200'
+        result = JSON.parse(response.body)
+        puts "[성공] 답글 ID: #{result['id']}"
+        return { id: result['id'].to_s }
       else
-        puts "[경고] create_status가 빈 결과 반환, 독립 게시물로 재시도"
-        result2 = @client.create_status(full_text, visibility: "public")
-        puts "[디버그] 독립 게시물 결과: #{result2.class}"
-        if result2 && result2.respond_to?(:id) && result2.id
-          puts "[성공] 독립 게시물 ID: #{result2.id}"
-          return { id: result2.id.to_s }
-        else
-          puts "[실패] 독립 게시물도 빈 결과"
-          return nil
-        end
+        puts "[에러] HTTP #{response.code}: #{response.body[0..200]}"
+        return nil
       end
       
     rescue => e
       puts "[에러] reply_with_mentions 실패: #{e.class}: #{e.message}"
       puts e.backtrace.first(5)
-      
-      # 최후의 수단: 독립 게시물
-      begin
-        puts "[재시도] 독립 게시물로 전송"
-        mentions = participant_ids.map { |id| "@#{id}" }.join(' ')
-        full_text = "#{mentions}\n#{text}"
-        result = @client.create_status(full_text, visibility: "public")
-        
-        if result && result.respond_to?(:id) && result.id
-          puts "[성공] 독립 게시물 ID: #{result.id}"
-          return { id: result.id.to_s }
-        else
-          puts "[실패] 독립 게시물도 빈 결과"
-          return nil
-        end
-      rescue => retry_error
-        puts "[최종 실패] #{retry_error.class}: #{retry_error.message}"
-        puts retry_error.backtrace.first(3)
-        return nil
-      end
+      return nil
     end
   end
 
