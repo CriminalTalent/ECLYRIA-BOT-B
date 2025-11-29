@@ -122,7 +122,13 @@ class MastodonClient
         visibility: visibility == "direct" ? "direct" : "public"
       )
       
-      return { id: result.id.to_s } if result
+      if result && result.respond_to?(:id) && result.id
+        return { id: result.id.to_s }
+      else
+        puts "[경고] reply: create_status가 빈 결과 반환"
+        return nil
+      end
+      
     rescue => e
       puts "[에러] reply 실패: #{e.message}"
       puts e.backtrace.first(3)
@@ -132,7 +138,7 @@ class MastodonClient
           text,
           visibility: "public"
         )
-        return { id: result.id.to_s } if result
+        return result && result.id ? { id: result.id.to_s } : nil
       rescue => retry_error
         puts "[에러] reply 재시도 실패: #{retry_error.message}"
       end
@@ -158,8 +164,26 @@ class MastodonClient
         visibility: "public"
       )
       
-      return { id: result.id.to_s } if result
-      nil
+      if result && result.respond_to?(:id) && result.id
+        return { id: result.id.to_s }
+      else
+        puts "[경고] reply_with_mentions: create_status가 빈 결과 반환"
+        return nil
+      end
+      
+    rescue Mastodon::Error::UnprocessableEntity => e
+      puts "[에러] 멘션 답글 실패 (422): #{e.message}"
+      # 대안: 독립 게시물로 전송
+      begin
+        mentions = participant_ids.map { |id| "@#{id}" }.join(' ')
+        full_text = "#{mentions}\n#{text}"
+        result = @client.create_status(full_text, visibility: "public")
+        return result && result.id ? { id: result.id.to_s } : nil
+      rescue => retry_error
+        puts "[에러] 독립 게시물도 실패: #{retry_error.message}"
+        return nil
+      end
+      
     rescue => e
       puts "[에러] 멘션 답글 실패: #{e.message}"
       puts e.backtrace.first(3)
