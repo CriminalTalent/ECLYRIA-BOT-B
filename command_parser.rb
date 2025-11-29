@@ -55,6 +55,24 @@ class CommandParser
     when /\[회복\]/i, /\[힐\]/i
       @heal_command.use_potion(user_id, reply_status)
 
+    # 제3자가 두 사람의 전투 시작 (먼저 체크해야 함)
+    when /\[전투개시\/@?(\S+)\/@?(\S+)\]/i
+      user1 = Regexp.last_match(1)
+      user2 = Regexp.last_match(2)
+      
+      # 두 사용자가 모두 등록되어 있는지 확인
+      player1 = @sheet_manager.find_user(user1)
+      player2 = @sheet_manager.find_user(user2)
+      
+      unless player1 && player2
+        missing = []
+        missing << user1 unless player1
+        missing << user2 unless player2
+        @mastodon_client.reply(reply_status, "@#{user_id} 등록되지 않은 사용자: #{missing.join(', ')}")
+      else
+        @battle_command.handle_command(user_id, "[전투 #{user1} vs #{user2}]", reply_status)
+      end
+
     when /\[전투개시\/@?(\S+)\]/i
       target = Regexp.last_match(1)
       @battle_command.handle_command(user_id, "[전투 #{user_id} vs #{target}]", reply_status)
