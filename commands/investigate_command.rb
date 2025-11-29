@@ -225,6 +225,8 @@ class InvestigateCommand
     location = state["위치"] || "-"
     points = state["이동포인트"] || 0
     status = state["조사상태"] || "없음"
+    stealth = state["은밀도"] || 0
+    cooperation = state["협력상태"] || "-"
     
     msg = "@#{user_id}\n"
     msg += "━━━━━━━━━━━━━━━━━━\n"
@@ -233,10 +235,12 @@ class InvestigateCommand
     msg += "현재 위치: #{location}\n"
     msg += "남은 이동 포인트: #{points}/3\n"
     msg += "조사 상태: #{status}\n"
+    msg += "은밀도: #{stealth}/100\n"
+    msg += "협력 상태: #{cooperation}\n"
     msg += "\n━━━━━━━━━━━━━━━━━━\n"
     
     if location != "-"
-      msg += "[조사/위치] [세부조사/대상] [이동/위치] [조사종료]"
+      msg += "[조사/위치] [세부조사/대상] [이동/위치] [협력조사/대상/@상대] [방해/@상대] [조사종료]"
     else
       msg += "[조사시작] [조사/위치]"
     end
@@ -286,6 +290,10 @@ class InvestigateCommand
     success = total >= difficulty
     result = success ? row["성공결과"] : row["실패결과"]
 
+    # 협력상태를 시트에 기록
+    @sheet_manager.set_status_effect(user_id, "협력조사:#{partner_name}")
+    @sheet_manager.set_status_effect(partner_id, "협력조사:#{user_id}")
+
     # Direct 답글로 전송 (양쪽 모두 멘션)
     msg = "@#{user_id} @#{partner_name}\n"
     msg += "━━━━━━━━━━━━━━━━━━\n"
@@ -308,6 +316,10 @@ class InvestigateCommand
     # 로그 기록
     @sheet_manager.log_investigation(user_id, loc1, target, "협력조사", success, result)
     @sheet_manager.log_investigation(partner_id, loc1, target, "협력조사", success, result)
+    
+    # 협력 완료 후 상태 초기화
+    @sheet_manager.clear_status_effect(user_id)
+    @sheet_manager.clear_status_effect(partner_id)
   end
 
   # === [방해/@상대]
@@ -332,7 +344,14 @@ class InvestigateCommand
       return
     end
 
+    location = state["위치"]
+    
+    # 시트에 방해 상태 기록
     @sheet_manager.set_status_effect(target_id, "방해")
+
+    # 로그에 기록
+    @sheet_manager.log_investigation(user_id, location, target_user, "방해", true, "#{target_user}를 방해함")
+    @sheet_manager.log_investigation(target_id, location, user_id, "방해받음", false, "#{user_id}에게 방해받음 (다음 판정 -3)")
 
     # 공개 답글
     @mastodon_client.reply(reply_status, "@#{user_id} @#{target_user}을(를) 방해했습니다!")
