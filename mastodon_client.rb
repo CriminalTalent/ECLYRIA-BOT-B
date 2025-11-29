@@ -117,6 +117,48 @@ class MastodonClient
     end
   end
 
+  def reply_direct(to_status, text)
+    begin
+      status_id = to_status.is_a?(Hash) ? to_status[:id] : to_status.id
+
+      unless status_id
+        puts "[에러] reply_direct: status_id가 없음"
+        return nil
+      end
+
+      status_id = status_id.to_s
+
+      # HTTP 직접 요청으로 direct 답글
+      uri = URI("#{@base_url}/api/v1/statuses")
+      request = Net::HTTP::Post.new(uri)
+      request['Authorization'] = "Bearer #{@token}"
+      request['Content-Type'] = 'application/json'
+      request.body = {
+        status: text,
+        in_reply_to_id: status_id,
+        visibility: 'direct'
+      }.to_json
+
+      response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true) do |http|
+        http.request(request)
+      end
+
+      if response.code == '200'
+        result = JSON.parse(response.body)
+        puts "[성공] Direct 답글 ID: #{result['id']}"
+        return { id: result['id'].to_s }
+      else
+        puts "[에러] HTTP #{response.code}: #{response.body[0..200]}"
+        return nil
+      end
+      
+    rescue => e
+      puts "[에러] reply_direct 실패: #{e.class}: #{e.message}"
+      puts e.backtrace.first(5)
+      return nil
+    end
+  end
+
   def reply_with_mentions(to_status, text, participant_ids)
     begin
       status_id = to_status.is_a?(Hash) ? to_status[:id] : to_status.id
