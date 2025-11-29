@@ -30,8 +30,23 @@ class CommandParser
   def parse(text, user_id, reply_status)
     text = text.strip
     
-    # 멘션 제거 (명령어만 추출)
-    clean_text = text.gsub(/@\S+\s*/, '').strip
+    # 명령어 대괄호 안의 내용은 보존하면서 외부의 봇 멘션만 제거
+    # 1. 명령어 부분 임시 저장
+    commands = []
+    temp_text = text.gsub(/\[([^\]]+)\]/) do |match|
+      commands << match
+      "__CMD#{commands.length - 1}__"
+    end
+    
+    # 2. 외부 멘션만 제거
+    temp_text = temp_text.gsub(/@\S+\s*/, '').strip
+    
+    # 3. 명령어 복원
+    commands.each_with_index do |cmd, idx|
+      temp_text = temp_text.sub("__CMD#{idx}__", cmd)
+    end
+    
+    clean_text = temp_text
     
     puts "[전투봇] 명령 수신: #{clean_text} (from @#{user_id})"
 
