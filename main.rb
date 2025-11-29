@@ -49,13 +49,25 @@ puts "👂 멘션/DM 스트리밍 시작..."
 
 processed = Set.new
 
+# === 재시도 설정 ===
+MAX_SSL_RETRY = 3
+MAX_GENERAL_RETRY = 3
+ssl_error_count = 0
+general_retry_count = 0
+
 # ===========================================
 # 🔥 스트리밍 루프 — mention + DM 모두 처리
 # ===========================================
 loop do
   begin
+    puts "[마스토돈] user 스트림 구독 시작... (@#{mastodon.bot_username} 멘션만 처리)"
+    
     mastodon.stream_user do |status|
       begin
+        # 연결 성공 시 카운터 리셋
+        ssl_error_count = 0
+        general_retry_count = 0
+        
         # status는 해시 형태 (symbolize_names: true)
         mention_id = status[:id]
         
@@ -71,8 +83,7 @@ loop do
         sender = status[:account][:acct]
         content = status[:content]
         
-        puts "[처리] #{mention_id} / #{created.strftime('%H:%M:%S')} - @#{sender}"
-        puts "[내용] #{content}"
+        puts "[스트리밍] #{mention_id} - @#{sender}"
         
         parser.handle(status)
         
@@ -82,11 +93,51 @@ loop do
       end
     end
     
+  rescue EOFError, OpenSSL::SSL::SSLError => e
+    # SSL 관련 오류 처리
+    ssl_error_count += 1
+    puts "[SSL 오류 #{ssl_error_count}/#{MAX_SSL_RETRY}] #{e.message}"
+    
+    if ssl_error_count >= MAX_SSL_RETRY
+      puts "[경고] SSL 오류가 #{MAX_SSL_RETRY}회 연속 발생했습니다."
+      puts "[대기] 30초 후 재연결을 시도합니다..."
+      sleep 30
+      ssl_error_count = 0
+    else
+      puts "[재시도] 3초 후 재연결..."
+      sleep 3
+    end
+    
+    retry
+    
+  rescue Interrupt
+    # Ctrl+C로 종료
+    puts "\n[종료] 봇을 종료합니다..."
+    break
+    
+  rescue SystemExit, SignalException
+    # 시스템 종료 시그널
+    puts "\n[종료] 시스템 종료 시그널 수신..."
+    break
+    
   rescue => e
-    puts "[스트리밍 오류] #{e.class}: #{e.message}"
-    puts "[3초 후 재접속]"
-    sleep 3
-    puts "[마스토돈] 멘션 스트리밍 재시작..."
+    # 기타 모든 오류
+    general_retry_count += 1
+    puts "[스트리밍 오류 #{general_retry_count}/#{MAX_GENERAL_RETRY}] #{e.class}: #{e.message}"
+    puts e.backtrace.first(5)
+    
+    if general_retry_count >= MAX_GENERAL_RETRY
+      puts "[심각] 일반 오류가 #{MAX_GENERAL_RETRY}회 연속 발생했습니다."
+      puts "[대기] 60초 후 재연결을 시도합니다..."
+      sleep 60
+      general_retry_count = 0
+    else
+      puts "[재시도] 5초 후 재연결..."
+      sleep 5
+    end
+    
     retry
   end
 end
+
+puts "[종료] 전투봇이 정상적으로 종료되었습니다."
