@@ -47,6 +47,47 @@ class InvestigateCommand
     s.to_s.strip.gsub(/\p{Cf}/, '')
   end
 
+  # 보상 파싱 및 지급
+  def process_rewards(user_id, result_text)
+    return unless result_text
+
+    # [아이템:아이템명] 추출
+    items = result_text.scan(/\[아이템:([^\]]+)\]/).flatten
+    # [갈레온:숫자] 추출
+    galleons_match = result_text.match(/\[갈레온:(\d+)\]/)
+    galleons = galleons_match ? galleons_match[1].to_i : 0
+
+    return if items.empty? && galleons == 0
+
+    user = @sheet_manager.find_user(user_id)
+    return unless user
+
+    rewards = []
+
+    # 아이템 지급
+    if items.any?
+      current_items = user["아이템"].to_s.split(",").map(&:strip).reject(&:empty?)
+      new_items = current_items + items
+      @sheet_manager.update_user(user_id, { items: new_items.join(", ") })
+      rewards << "아이템: #{items.join(', ')}"
+    end
+
+    # 갈레온 지급
+    if galleons > 0
+      current_galleons = user["갈레온"].to_i
+      new_galleons = current_galleons + galleons
+      @sheet_manager.update_user(user_id, { galleons: new_galleons })
+      rewards << "갈레온: +#{galleons}G (총 #{new_galleons}G)"
+    end
+
+    rewards
+  end
+
+  # 보상 메시지 제거 (사용자에게 보이는 텍스트 정리)
+  def clean_result_text(text)
+    text.to_s.gsub(/\[아이템:[^\]]+\]/, '').gsub(/\[갈레온:\d+\]/, '').strip
+  end
+
   # === [조사시작]
   def start_investigation(user_id, reply_status)
     user = @sheet_manager.find_user(user_id)
@@ -102,7 +143,20 @@ class InvestigateCommand
       msg += "━━━━━━━━━━━━━━━━━━\n"
       
       result_text = success ? row["성공결과"] : row["실패결과"]
-      msg += result_text.to_s.strip
+      
+      # 보상 처리
+      rewards = process_rewards(user_id, result_text)
+      
+      # 보상 태그 제거한 텍스트
+      clean_text = clean_result_text(result_text)
+      msg += clean_text
+      
+      # 보상 정보 추가
+      if rewards && rewards.any?
+        msg += "\n\n━━━━━━━━━━━━━━━━━━\n"
+        msg += "획득:\n"
+        msg += rewards.map { |r| "• #{r}" }.join("\n")
+      end
       
       # 로그 기록
       @sheet_manager.log_investigation(user_id, location, location, "조사", success, result_text)
@@ -183,6 +237,10 @@ class InvestigateCommand
     success = total >= difficulty
     result = success ? row["성공결과"] : row["실패결과"]
 
+    # 보상 처리
+    rewards = process_rewards(user_id, result)
+    clean_text = clean_result_text(result)
+
     # Direct 답글로 상세 결과 전송
     msg = "@#{user_id}\n"
     msg += "━━━━━━━━━━━━━━━━━━\n"
@@ -195,7 +253,15 @@ class InvestigateCommand
     msg += "난이도: #{difficulty}\n"
     msg += "결과: #{success ? '성공' : '실패'}\n\n"
     msg += "━━━━━━━━━━━━━━━━━━\n"
-    msg += result.to_s.strip
+    msg += clean_text
+    
+    # 보상 정보 추가
+    if rewards && rewards.any?
+      msg += "\n\n━━━━━━━━━━━━━━━━━━\n"
+      msg += "획득:\n"
+      msg += rewards.map { |r| "• #{r}" }.join("\n")
+    end
+    
     msg += "\n━━━━━━━━━━━━━━━━━━\n"
     msg += "[세부조사/대상] [이동/위치] [위치확인] [조사종료]"
 
@@ -310,6 +376,11 @@ class InvestigateCommand
     @sheet_manager.set_status_effect(user_id, "협력조사:#{partner_name}")
     @sheet_manager.set_status_effect(partner_id, "협력조사:#{user_id}")
 
+    # 보상 처리 (양쪽 모두에게)
+    rewards_user = process_rewards(user_id, result)
+    rewards_partner = process_rewards(partner_id, result)
+    clean_text = clean_result_text(result)
+
     # Direct 답글로 전송 (양쪽 모두 멘션)
     msg = "@#{user_id} @#{partner_name}\n"
     msg += "━━━━━━━━━━━━━━━━━━\n"
@@ -323,7 +394,23 @@ class InvestigateCommand
     msg += "최종: #{total} vs 난이도 #{difficulty}\n"
     msg += "결과: #{success ? '성공' : '실패'}\n\n"
     msg += "━━━━━━━━━━━━━━━━━━\n"
-    msg += result.to_s.strip
+    msg += clean_text
+    
+    # 보상 정보 추가
+    if (rewards_user && rewards_user.any?) || (rewards_partner && rewards_partner.any?)
+      msg += "\n\n━━━━━━━━━━━━━━━━━━\n"
+      msg += "획득:\n"
+      if rewards_user && rewards_user.any?
+        msg += "@#{user_id}:\n"
+        msg += rewards_user.map { |r| "  • #{r}" }.join("\n")
+      end
+      if rewards_partner && rewards_partner.any?
+        msg += "\n" if rewards_user && rewards_user.any?
+        msg += "@#{partner_name}:\n"
+        msg += rewards_partner.map { |r| "  • #{r}" }.join("\n")
+      end
+    end
+    
     msg += "\n━━━━━━━━━━━━━━━━━━\n"
     msg += "[세부조사/대상] [협력조사/대상/@상대] [방해/@상대] [조사종료]"
 
