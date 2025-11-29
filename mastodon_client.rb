@@ -48,38 +48,7 @@ class MastodonClient
 
     @streamer.user do |event|
       begin
-        if event.is_a?(Mastodon::Status)
-          status = deep_symbolize(event.to_h)
-
-          next unless status[:account] && status[:account][:acct]
-
-          if status[:visibility] == "direct"
-            if status[:mentions] && status[:mentions].any?
-              has_battle_mention = status[:mentions].any? do |mention|
-                mention[:username].to_s.downcase == @bot_username.downcase ||
-                mention[:acct].to_s.downcase == @bot_acct.downcase
-              end
-              
-              if has_battle_mention
-                block.call(status)
-              end
-            end
-            next
-          end
-
-          if status[:mentions] && status[:mentions].any?
-            has_battle_mention = status[:mentions].any? do |mention|
-              mention[:username].to_s.downcase == @bot_username.downcase ||
-              mention[:acct].to_s.downcase == @bot_acct.downcase
-            end
-            
-            if has_battle_mention
-              block.call(status)
-            end
-            next
-          end
-        end
-
+        # Notification 이벤트만 처리 (중복 방지)
         if event.is_a?(Mastodon::Notification)
           next unless event.type == "mention"
           next unless event.status
@@ -97,7 +66,6 @@ class MastodonClient
               block.call(status)
             end
           end
-          next
         end
 
       rescue => e
@@ -126,10 +94,10 @@ class MastodonClient
       )
       
       if result && result.respond_to?(:id) && result.id
+        puts "[성공] reply ID: #{result.id}"
         return { id: result.id.to_s }
       else
-        puts "[경고] reply: create_status가 빈 결과 반환"
-        # 독립 게시물로 재시도
+        puts "[경고] reply: create_status가 빈 결과 반환, 독립 게시물로 재시도"
         result2 = @client.create_status(text, visibility: "public")
         return result2 && result2.id ? { id: result2.id.to_s } : nil
       end
@@ -139,6 +107,7 @@ class MastodonClient
       puts e.backtrace.first(3)
       
       begin
+        puts "[재시도] 독립 게시물로 전송"
         result = @client.create_status(text, visibility: "public")
         return result && result.id ? { id: result.id.to_s } : nil
       rescue => retry_error
@@ -179,7 +148,13 @@ class MastodonClient
         puts "[경고] create_status가 빈 결과 반환, 독립 게시물로 재시도"
         result2 = @client.create_status(full_text, visibility: "public")
         puts "[디버그] 독립 게시물 결과: #{result2.class}"
-        return result2 && result2.id ? { id: result2.id.to_s } : nil
+        if result2 && result2.respond_to?(:id) && result2.id
+          puts "[성공] 독립 게시물 ID: #{result2.id}"
+          return { id: result2.id.to_s }
+        else
+          puts "[실패] 독립 게시물도 빈 결과"
+          return nil
+        end
       end
       
     rescue => e
