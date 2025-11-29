@@ -25,13 +25,13 @@ class SheetManager
     if @cache[range] && @cache_time[range]
       elapsed = Time.now - @cache_time[range]
       if elapsed < CACHE_DURATION
-        puts "[캐시 히트] #{range} (#{elapsed.round(2)}초 전)"
+        # puts "[캐시 히트] #{range} (#{elapsed.round(2)}초 전)"
         return @cache[range]
       end
     end
     
     # 캐시 미스 - API 호출
-    puts "[API 호출] #{range}"
+    # puts "[API 호출] #{range}"
     result = @service.get_spreadsheet_values(@sheet_id, range).values
     
     # 캐시 저장
@@ -49,11 +49,11 @@ class SheetManager
     if range
       @cache.delete(range)
       @cache_time.delete(range)
-      puts "[캐시 무효화] #{range}"
+      # puts "[캐시 무효화] #{range}"
     else
       @cache.clear
       @cache_time.clear
-      puts "[캐시 전체 무효화]"
+      # puts "[캐시 전체 무효화]"
     end
   end
 
