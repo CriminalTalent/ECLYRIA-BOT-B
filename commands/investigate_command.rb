@@ -51,7 +51,7 @@ class InvestigateCommand
   def start_investigation(user_id, reply_status)
     user = @sheet_manager.find_user(user_id)
     unless user
-      @mastodon_client.reply(reply_status, "@#{user_id} 등록되지 않은 사용자입니다. [입학/이름]으로 먼저 등록해주세요.")
+      @mastodon_client.reply_direct(reply_status, "@#{user_id} 등록되지 않은 사용자입니다. [입학/이름]으로 먼저 등록해주세요.")
       return
     end
 
@@ -66,7 +66,6 @@ class InvestigateCommand
     msg += "\n\n━━━━━━━━━━━━━━━━━━\n"
     msg += "[조사/위치] [위치확인] [조사종료]"
     
-    # visibility: direct로 비공개 답글
     @mastodon_client.reply_direct(reply_status, msg)
   end
 
@@ -82,6 +81,8 @@ class InvestigateCommand
     # 위치 정보 조회
     row = @sheet_manager.find_investigation_entry(location, "조사")
     
+    msg = "@#{user_id}\n"
+    
     if row
       # 난이도 판정
       user = @sheet_manager.find_user(user_id)
@@ -91,8 +92,7 @@ class InvestigateCommand
       total = dice + luck
       success = total >= difficulty
       
-      # Direct 답글로 결과 전송
-      msg = "@#{user_id}\n"
+      # 결과 메시지
       msg += "━━━━━━━━━━━━━━━━━━\n"
       msg += "위치: #{location}\n"
       msg += "━━━━━━━━━━━━━━━━━━\n\n"
@@ -104,8 +104,6 @@ class InvestigateCommand
       result_text = success ? row["성공결과"] : row["실패결과"]
       msg += result_text.to_s.strip
       
-      @mastodon_client.reply_direct(reply_status, msg)
-      
       # 로그 기록
       @sheet_manager.log_investigation(user_id, location, location, "조사", success, result_text)
     else
@@ -113,29 +111,27 @@ class InvestigateCommand
       overview = @sheet_manager.location_overview_outputs(location)
       
       if overview.any?
-        msg = "@#{user_id}\n"
         msg += "━━━━━━━━━━━━━━━━━━\n"
         msg += "#{location}\n"
         msg += "━━━━━━━━━━━━━━━━━━\n\n"
         msg += overview.join("\n\n")
-        
-        @mastodon_client.reply_direct(reply_status, msg)
       end
     end
 
-    # 세부 조사 대상 안내
+    # 세부 조사 대상 안내 (같은 메시지에 포함)
     details = @sheet_manager.detail_candidates(location)
     if details.any?
-      detail_msg = "@#{user_id}\n\n세부 조사 가능:\n"
-      detail_msg += details.map { |d| "- #{d}" }.join("\n")
-      detail_msg += "\n\n━━━━━━━━━━━━━━━━━━\n"
-      detail_msg += "[세부조사/대상] [이동/위치] [위치확인] [조사종료]"
-      @mastodon_client.reply_direct(reply_status, detail_msg)
+      msg += "\n\n세부 조사 가능:\n"
+      msg += details.map { |d| "- #{d}" }.join("\n")
+      msg += "\n\n━━━━━━━━━━━━━━━━━━\n"
+      msg += "[세부조사/대상] [이동/위치] [위치확인] [조사종료]"
     else
-      choice_msg = "@#{user_id}\n\n━━━━━━━━━━━━━━━━━━\n"
-      choice_msg += "[이동/위치] [위치확인] [조사종료]"
-      @mastodon_client.reply_direct(reply_status, choice_msg)
+      msg += "\n\n━━━━━━━━━━━━━━━━━━\n"
+      msg += "[이동/위치] [위치확인] [조사종료]"
     end
+    
+    # 한 번에 전송
+    @mastodon_client.reply_direct(reply_status, msg)
   end
 
   # === [세부조사/대상]
@@ -313,17 +309,17 @@ class InvestigateCommand
     target_state = @sheet_manager.get_investigation_state(target_id)
 
     if state["조사상태"] != "진행중"
-      @mastodon_client.dm(user_id, "당신은 아직 조사 중이 아닙니다.")
+      @mastodon_client.reply_direct(reply_status, "@#{user_id} 당신은 아직 조사 중이 아닙니다.")
       return
     end
 
     if target_state["조사상태"] != "진행중"
-      @mastodon_client.dm(user_id, "상대(@#{target_user})는 현재 조사 중이 아닙니다.")
+      @mastodon_client.reply_direct(reply_status, "@#{user_id} 상대(@#{target_user})는 현재 조사 중이 아닙니다.")
       return
     end
 
     if normalize_location(state["위치"]) != normalize_location(target_state["위치"])
-      @mastodon_client.dm(user_id, "같은 위치에 있어야 방해할 수 있습니다.")
+      @mastodon_client.reply_direct(reply_status, "@#{user_id} 같은 위치에 있어야 방해할 수 있습니다.")
       return
     end
 
@@ -332,8 +328,8 @@ class InvestigateCommand
     # 공개 답글
     @mastodon_client.reply(reply_status, "@#{user_id} @#{target_user}을(를) 방해했습니다!")
 
-    # 방해한 사람 DM
-    @mastodon_client.dm(user_id, "@#{target_user}을(를) 방해했습니다!\n다음 조사 판정에 -3 불이익을 줍니다.")
+    # 방해한 사람 Direct 답글
+    @mastodon_client.reply_direct(reply_status, "@#{user_id} @#{target_user}을(를) 방해했습니다!\n다음 조사 판정에 -3 불이익을 줍니다.")
 
     # 방해받은 사람에게 DM
     @mastodon_client.dm(
