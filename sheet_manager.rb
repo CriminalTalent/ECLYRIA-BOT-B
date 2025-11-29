@@ -3,7 +3,7 @@ require 'googleauth'
 
 class SheetManager
   CACHE_DURATION = 5 # 캐시 유효 시간 (초) - API 호출 최소화
-  
+
   def initialize(sheet_id, credentials_path)
     @sheet_id = sheet_id
     @service = Google::Apis::SheetsV4::SheetsService.new
@@ -11,11 +11,11 @@ class SheetManager
       json_key_io: File.open(credentials_path),
       scope: Google::Apis::SheetsV4::AUTH_SPREADSHEETS
     )
-    
+
     # 캐시 저장소
     @cache = {}
     @cache_time = {}
-    
+
     puts "[SheetManager] 캐시 시스템 활성화 (유효시간: #{CACHE_DURATION}초)"
   end
 
@@ -29,21 +29,21 @@ class SheetManager
         return @cache[range]
       end
     end
-    
+
     # 캐시 미스 - API 호출
     # puts "[API 호출] #{range}"
     result = @service.get_spreadsheet_values(@sheet_id, range).values
-    
+
     # 캐시 저장
     @cache[range] = result
     @cache_time[range] = Time.now
-    
+
     result
   rescue => e
     puts "[에러] read_values 실패: #{e.message}"
     nil
   end
-  
+
   # 캐시 무효화 (데이터 변경 시 호출)
   def invalidate_cache(range = nil)
     if range
@@ -60,22 +60,22 @@ class SheetManager
   def update_values(range, values)
     range_obj = Google::Apis::SheetsV4::ValueRange.new(values: values)
     result = @service.update_spreadsheet_value(@sheet_id, range, range_obj, value_input_option: 'USER_ENTERED')
-    
+
     # 업데이트 후 관련 캐시 무효화
     sheet_name = range.split('!').first
     invalidate_cache("#{sheet_name}!A:Z")
-    
+
     result
   end
 
   def append_values(range, values)
     range_obj = Google::Apis::SheetsV4::ValueRange.new(values: values)
     result = @service.append_spreadsheet_value(@sheet_id, range, range_obj, value_input_option: 'USER_ENTERED')
-    
+
     # 추가 후 관련 캐시 무효화
     sheet_name = range.split('!').first
     invalidate_cache("#{sheet_name}!A:Z")
-    
+
     result
   end
 
@@ -83,9 +83,9 @@ class SheetManager
   def find_user(user_id)
     rows = read_values("스탯!A:Z")
     return nil unless rows
-    
+
     headers = rows[0]
-    
+
     rows.each_with_index do |r, i|
       next if i == 0
       if r[0]&.gsub('@', '') == user_id.gsub('@', '')
@@ -102,13 +102,13 @@ class SheetManager
   def update_user(user_id, updates)
     rows = read_values("스탯!A:Z")
     return false unless rows
-    
+
     headers = rows[0]
-    
+
     rows.each_with_index do |row, idx|
       next if idx == 0
       next unless row[0]&.gsub('@', '') == user_id.gsub('@', '')
-      
+
       updates.each do |key, value|
         # 영어 키를 한글 헤더로 변환
         header_name = case key.to_sym
@@ -120,7 +120,7 @@ class SheetManager
                       when :luck then "행운"
                       when :attack then "공격"
                       when :defense then "방어"
-                      
+
                       # 상점봇용
                       when :galleons then "갈레온"
                       when :items then "아이템"
@@ -131,15 +131,15 @@ class SheetManager
                       when :last_tarot_date then "마지막타로날짜"
                       when :house_points then "기숙사점수"
                       when :bet_count then "마지막베팅횟수"
-                      
+
                       else key.to_s
                       end
-        
+
         col = headers.index(header_name)
         next unless col
         row[col] = value
       end
-      
+
       update_values("스탯!A#{idx+1}:Z#{idx+1}", [row])
       return true
     end
@@ -152,7 +152,7 @@ class SheetManager
     headers.each_with_index do |h, i|
       # 한글 키 그대로 저장 (하위 호환)
       data[h] = row[i]
-      
+
       # 영어 심볼 키 추가
       key = case h
             # 전투 스탯
@@ -163,7 +163,7 @@ class SheetManager
             when "행운" then :luck
             when "공격" then :attack
             when "방어" then :defense
-            
+
             # 상점봇용
             when "사용자 ID" then :id
             when "갈레온" then :galleons
@@ -175,10 +175,10 @@ class SheetManager
             when "마지막타로날짜" then :last_tarot_date
             when "기숙사점수" then :house_points
             when "마지막베팅횟수" then :bet_count
-            
+
             else nil
             end
-      
+
       data[key] = row[i] if key
     end
     data
@@ -207,7 +207,7 @@ class SheetManager
     rows = read_values("조사!A:G")
     return nil unless rows && !rows.empty?
     headers = rows[0]
-    
+
     rows.each_with_index do |r, i|
       next if i == 0
       if r[1] == target && r[3] == kind
@@ -240,9 +240,9 @@ class SheetManager
   def upsert_investigation_state(user_id, state, location)
     rows = read_values("조사상태!A:Z")
     return unless rows
-    
+
     idx = rows.find_index { |r| r[0] == user_id }
-    
+
     if idx
       # 기존 레코드 업데이트
       update_values("조사상태!B#{idx+1}:C#{idx+1}", [[state, location]])
@@ -256,11 +256,11 @@ class SheetManager
   def set_status_effect(user_id, effect)
     rows = read_values("조사상태!A:Z")
     return unless rows
-    
+
     headers = rows[0]
     effect_col = headers.index("협력상태")
     return unless effect_col
-    
+
     rows.each_with_index do |row, idx|
       next if idx == 0
       if row[0] == user_id
@@ -279,11 +279,11 @@ class SheetManager
   def update_move_points(user_id, points)
     rows = read_values("조사상태!A:Z")
     return unless rows
-    
+
     headers = rows[0]
     points_col = headers.index("이동포인트")
     return unless points_col
-    
+
     rows.each_with_index do |row, idx|
       next if idx == 0
       if row[0] == user_id
@@ -298,14 +298,34 @@ class SheetManager
   def location_overview_outputs(location)
     rows = read_values("조사!A:G")
     return [] unless rows && !rows.empty?
-    
+
     rows.select { |r| r[0] == location && r[2] && !r[2].empty? }.map { |r| r[2] }
   end
 
   def detail_candidates(location)
-    rows = read_values("조사!A:B")
+    rows = read_values("조사!A:G")  # 전체 열 가져오기
+    puts "[디버그] detail_candidates: location='#{location}'"
     return [] unless rows
-    rows.select { |r| r[0] == location && r[1] && !r[1].empty? }.map { |r| r[1] }.uniq
+    
+    current_location = nil
+    details = []
+    
+    rows.each_with_index do |r, i|
+      next if i == 0  # 헤더 스킵
+      
+      # A열에 값이 있으면 현재 위치 업데이트
+      if r[0] && !r[0].empty?
+        current_location = r[0]
+      end
+      
+      # 현재 위치가 찾는 위치이고, B열(세부조사)에 값이 있으면 추가
+      if current_location == location && r[1] && !r[1].empty?
+        details << r[1]
+      end
+    end
+    
+    puts "[디버그] detail_candidates 결과: #{details.uniq.inspect}"
+    details.uniq
   end
 
   # === 로그 ===
