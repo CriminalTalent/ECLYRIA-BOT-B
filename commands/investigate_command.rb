@@ -118,16 +118,32 @@ class InvestigateCommand
       end
     end
 
+    # 같은 위치에 있는 다른 사용자들 표시
+    other_users = @sheet_manager.users_at_location(location).reject { |u| u == user_id }
+    if other_users.any?
+      msg += "\n\n━━━━━━━━━━━━━━━━━━\n"
+      msg += "이 위치에 있는 사람들:\n"
+      msg += other_users.map { |u| "@#{u}" }.join(", ")
+    end
+
     # 세부 조사 대상 안내 (같은 메시지에 포함)
     details = @sheet_manager.detail_candidates(location)
     if details.any?
       msg += "\n\n세부 조사 가능:\n"
       msg += details.map { |d| "- #{d}" }.join("\n")
       msg += "\n\n━━━━━━━━━━━━━━━━━━\n"
-      msg += "[세부조사/대상] [이동/위치] [위치확인] [조사종료]"
+      if other_users.any?
+        msg += "[세부조사/대상] [협력조사/대상/@상대] [방해/@상대] [이동/위치] [위치확인] [조사종료]"
+      else
+        msg += "[세부조사/대상] [이동/위치] [위치확인] [조사종료]"
+      end
     else
       msg += "\n\n━━━━━━━━━━━━━━━━━━\n"
-      msg += "[이동/위치] [위치확인] [조사종료]"
+      if other_users.any?
+        msg += "[협력조사/대상/@상대] [방해/@상대] [이동/위치] [위치확인] [조사종료]"
+      else
+        msg += "[이동/위치] [위치확인] [조사종료]"
+      end
     end
     
     # 한 번에 전송
