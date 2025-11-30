@@ -25,6 +25,8 @@ class PotionCommand
   private
 
   def use_potion_internal(user_id, target_id, reply_status, potion_type)
+    puts "[디버그] use_potion_internal 시작: user_id=#{user_id}, target_id=#{target_id}, potion_type=#{potion_type}"
+    
     state = BattleState.get
     unless state && !state.empty?
       @mastodon_client.reply(reply_status, "전투 중에만 물약을 사용할 수 있습니다.")
@@ -39,6 +41,9 @@ class PotionCommand
     # 스탯 시트에서 전투 정보 조회
     user = @sheet_manager.find_user(user_id)
     target = @sheet_manager.find_user(target_id)
+    
+    puts "[디버그] user 찾기 결과: #{user ? '성공' : '실패'}"
+    puts "[디버그] target 찾기 결과: #{target ? '성공' : '실패'}"
 
     unless user
       @mastodon_client.reply(reply_status, "사용자 정보를 찾을 수 없습니다.")
@@ -57,6 +62,10 @@ class PotionCommand
 
     # 사용자 시트에서 아이템 정보 조회
     user_data = @sheet_manager.find_user_items(user_id)
+    
+    puts "[디버그] find_user_items 결과: #{user_data ? '성공' : '실패'}"
+    puts "[디버그] user_data 내용: #{user_data.inspect}" if user_data
+    
     unless user_data
       user_name = user["이름"] || user_id
       if state[:type] == "2v2"
@@ -68,6 +77,8 @@ class PotionCommand
     end
 
     items = user_data["아이템"] || ""
+    
+    puts "[디버그] 아이템 목록: #{items.inspect}"
 
     unless items.include?("물약")
       user_name = user["이름"] || user_id
