@@ -1,131 +1,81 @@
-# core/battle_engine.rb
-# encoding: UTF-8
+class BattleState
+  @battles = {}
+  @mutex = Mutex.new
 
-require_relative 'battle_state'
-
-class BattleEngine
-  def initialize(sheet_manager, mastodon)
-    @sheet_manager = sheet_manager
-    @mastodon = mastodon
-    @states = {}  # battle_id => BattleState
-  end
-
-  # 전투 시작
-  def start_battle(attacker_id, defender_id)
-    return if in_battle?(attacker_id) || in_battle?(defender_id)
-
-    battle_id = "#{attacker_id}_vs_#{defender_id}_#{Time.now.to_i}"
-
-    @states[battle_id] = BattleState.new(attacker_id, defender_id)
-
-    save_battle_state(battle_id)
-    battle_id
-  end
-
-  # 전투 중인지 검사
-  def in_battle?(player_id)
-    @states.values.any? { |s| s.active? && s.include?(player_id) }
-  end
-
-  # 플레이어가 포함된 전투 ID 반환
-  def find_battle(player_id)
-    @states.each do |id, state|
-      return id if state.active? && state.include?(player_id)
-    end
-    nil
-  end
-
-  # 공격 처리 (물리 or 마법)
-  def attack(battle_id, attacker_id, attack_type)
-    state = @states[battle_id]
-    return error("전투 상태를 찾을 수 없습니다.") unless state
-
-    unless state.turn_player == attacker_id
-      return error("지금은 #{state.turn_player}의 차례입니다.")
-    end
-
-    damage = roll_damage(attack_type)
-    state.apply_damage(attacker_id, damage)
-
-    save_battle_state(battle_id)
-
-    result = {
-      damage: damage,
-      target: state.opponent_of(attacker_id),
-      hp: state.hp[state.opponent_of(attacker_id)]
-    }
-
-    if state.finished?
-      result[:finished] = true
-      result[:winner] = state.winner
-    else
-      state.next_turn
-    end
-
-    result
-  end
-
-  # 방어 처리
-  def defend(battle_id, defender_id)
-    state = @states[battle_id]
-    return error("전투 상태 없음") unless state
-    return error("당신의 차례가 아닙니다!") unless state.turn_player == defender_id
-
-    block = rand(5..15)
-    state.heal(defender_id, block)
-
-    save_battle_state(battle_id)
-
-    state.next_turn
-
-    { block: block }
-  end
-
-  # 도망 처리
-  def flee(battle_id, player_id)
-    state = @states[battle_id]
-    return error("전투 상태 없음") unless state
-
-    success = rand < 0.5
-    if success
-      state.terminate(player_id)
-      save_battle_state(battle_id)
-      return { fled: true }
-    end
-
-    save_battle_state(battle_id)
-    { fled: false }
-  end
-
-  # ===== 내부 유틸 =====
-
-  def roll_damage(type)
-    case type
-    when :physical then rand(8..18)
-    when :magic then rand(10..22)
-    else rand(5..10)
+  # 새 전투 생성
+  def self.create(participants, state_data)
+    @mutex.synchronize do
+      battle_id = generate_battle_id(participants)
+      @battles[battle_id] = state_data.merge(battle_id: battle_id)
+      battle_id
     end
   end
 
-  # 시트 저장(매 턴 후)
-  def save_battle_state(battle_id)
-    state = @states[battle_id]
-    return unless state
-
-    @sheet_manager.update_battle_log(
-      battle_id,
-      state.attacker, state.defender,
-      state.hp[state.attacker], state.hp[state.defender],
-      state.turn_player
-    )
+  # 전투 ID로 조회
+  def self.get(battle_id)
+    @mutex.synchronize do
+      @battles[battle_id]
+    end
   end
 
-  # 종료/완료 전투 정리
-  def cleanup_finished
-    @states.delete_if { |_, s| !s.active? }
+  # 사용자가 참여 중인 전투 찾기
+  def self.find_by_user(user_id)
+    @mutex.synchronize do
+      @battles.values.find { |state| state[:participants].include?(user_id) }
+    end
   end
 
-  def error(msg)
-    { error: msg }
+  # 사용자의 전투 ID 찾기
+  def self.find_battle_id_by_user(user_id)
+    @mutex.synchronize do
+      battle = @battles.find { |id, state| state[:participants].include?(user_id) }
+      battle ? battle[0] : nil
+    end
+  end
+
+  # 전투 상태 업데이트
+  def self.update(battle_id, updates)
+    @mutex.synchronize do
+      if @battles[battle_id]
+        @battles[battle_id].merge!(updates)
+      end
+    end
+  end
+
+  # 전투 종료 (삭제)
+  def self.clear(battle_id)
+    @mutex.synchronize do
+      @battles.delete(battle_id)
+    end
+  end
+
+  # 모든 전투 종료
+  def self.clear_all
+    @mutex.synchronize do
+      @battles.clear
+    end
+  end
+
+  # 전투 목록
+  def self.all
+    @mutex.synchronize do
+      @battles.dup
+    end
+  end
+
+  # 전투 개수
+  def self.count
+    @mutex.synchronize do
+      @battles.size
+    end
+  end
+
+  private
+
+  # 전투 ID 생성
+  def self.generate_battle_id(participants)
+    sorted = participants.sort.join('_')
+    timestamp = Time.now.to_i
+    "battle_#{sorted}_#{timestamp}"
   end
 end
