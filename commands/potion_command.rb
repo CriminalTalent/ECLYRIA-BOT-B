@@ -30,7 +30,7 @@ class PotionCommand
     in_battle = state && !state.empty?
     
     # 전투 중이면 턴 확인
-    if in_battle && state[:current_turn] != user_id
+    if in_battle && state[:current_turn].to_s != user_id.to_s
       @mastodon_client.reply(reply_status, "당신의 턴이 아닙니다.")
       return
     end
