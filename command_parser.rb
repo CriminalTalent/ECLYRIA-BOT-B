@@ -1,35 +1,74 @@
 # command_parser.rb
-# 인코딩: UTF-8
+# encoding: UTF-8
+
+require_relative 'commands/battle_command'
 
 class CommandParser
-  # 전투봇이 처리할 명령어 패턴들
-  PATTERNS = [
-    /\[(?:전투|1v1)\s+@?\S+\s+vs\s+@?\S+\]/i,         # [전투 @A vs @B]
-    /\[다인전투\/@?\S+\/@?\S+\/@?\S+\/@?\S+\]/i,     # [다인전투/@A/@B/@C/@D]
-    /\[공격(?:\/@?\S+)?\]/i,                         # [공격] / [공격/@A]
-    /\[방어(?:\/@?\S+)?\]/i,                         # [방어] / [방어/@A]
-    /\[반격\]/i,
-    /\[도주\]/i,
-    /\[허수아비\s*(하|중|상)\]/i                      # [허수아비 하/중/상]
-  ].freeze
+  def initialize(mastodon, sheet_manager, engine)
+    @mastodon = mastodon
+    @sheet_manager = sheet_manager
+    @engine = engine
+    log("CommandParser 초기화 완료")
+  end
 
-  def parse(text)
-    normalized = normalize_text(text)
+  def log(msg)
+    puts "[CommandParser] #{msg}"
+  end
 
-    return nil unless match_command?(normalized)
+  # ================================
+  #   Mentions 파싱
+  # ================================
+  def handle(status)
+    return unless status['visibility'] == 'direct' || status['mentions'].any?
 
-    normalized
+    content = clean(status['content'])
+    user = status['account']['acct']
+
+    log("handle(): #{user}: #{content}")
+
+    if content =~ /\[전투개시\/?@?([A-Za-z0-9_]+)\/?@?([A-Za-z0-9_]+)\]/ ||
+       content =~ /\[전투\s*@?([A-Za-z0-9_]+)\s*vs\s*@?([A-Za-z0-9_]+)\]/
+      p1 = $1
+      p2 = $2
+      reply(status, @engine.start_1v1(p1, p2))
+      return
+    end
+
+    if content =~ /^\[공격\]/
+      reply(status, @engine.attack(user))
+      return
+    end
+
+    if content =~ /^\[방어\]/
+      reply(status, @engine.defend(user))
+      return
+    end
+
+    if content =~ /^\[도망\]/
+      reply(status, @engine.flee(user))
+      return
+    end
+
+    if content =~ /^\[전투상태\]/
+      reply(status, @engine.status(user))
+      return
+    end
+  rescue => e
+    log("Error in handle(): #{e.class} - #{e.message}")
+    reply(status, "⚠ 처리 중 오류가 발생했습니다.")
   end
 
   private
 
-  # 텍스트에서 제어문자 제거 → 공백/이모지에도 견고하게
-  def normalize_text(text)
-    text.to_s.gsub(/\p{Cf}/, '').strip
+  def reply(status, text)
+    @mastodon.reply_with_mentions(
+      status_id: status['id'],
+      message: text,
+      visibility: "direct"
+    )
   end
 
-  # 한 패턴이라도 일치하면 실행
-  def match_command?(text)
-    PATTERNS.any? { |pattern| text.match?(pattern) }
+  def clean(html)
+    html.gsub(/<[^>]*>/, '').strip
   end
 end
