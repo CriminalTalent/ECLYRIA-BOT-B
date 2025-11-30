@@ -2,10 +2,9 @@ require_relative '../core/battle_state'
 
 class PotionCommand
   POTION_TYPES = {
-    "소형 물약" => 10,
-    "중형 물약" => 30,
-    "대형 물약" => 50,
-    "물약" => 20
+    "소형물약" => 10,
+    "중형물약" => 30,
+    "대형물약" => 50
   }
 
   def initialize(mastodon_client, sheet_manager)
@@ -28,12 +27,10 @@ class PotionCommand
     puts "[디버그] use_potion_internal 시작: user_id=#{user_id}, target_id=#{target_id}, potion_type=#{potion_type}"
     
     state = BattleState.get
-    unless state && !state.empty?
-      @mastodon_client.reply(reply_status, "전투 중에만 물약을 사용할 수 있습니다.")
-      return
-    end
-
-    unless state[:current_turn] == user_id
+    in_battle = state && !state.empty?
+    
+    # 전투 중이면 턴 확인
+    if in_battle && state[:current_turn] != user_id
       @mastodon_client.reply(reply_status, "당신의 턴이 아닙니다.")
       return
     end
@@ -55,7 +52,8 @@ class PotionCommand
       return
     end
 
-    unless state[:participants].include?(target_id)
+    # 전투 중이면 참가자 확인
+    if in_battle && !state[:participants].include?(target_id)
       @mastodon_client.reply(reply_status, "전투 참가자가 아닙니다.")
       return
     end
@@ -68,45 +66,46 @@ class PotionCommand
     
     unless user_data
       user_name = user["이름"] || user_id
-      if state[:type] == "2v2"
-        handle_failed_potion_2v2(user_id, user_name, state)
+      if in_battle
+        if state[:type] == "2v2"
+          handle_failed_potion_2v2(user_id, user_name, state)
+        else
+          handle_failed_potion_1v1(user_id, user_name, state)
+        end
       else
-        handle_failed_potion_1v1(user_id, user_name, state)
+        @mastodon_client.reply(reply_status, "#{user_name}은(는) 물약이 없습니다.")
       end
       return
     end
 
-    items = user_data["아이템"] || ""
+    items = (user_data["아이템"] || "").strip
     
     puts "[디버그] 아이템 목록: #{items.inspect}"
 
-    unless items.include?("물약")
-      user_name = user["이름"] || user_id
-
-      if state[:type] == "2v2"
-        handle_failed_potion_2v2(user_id, user_name, state)
-      else
-        handle_failed_potion_1v1(user_id, user_name, state)
-      end
-      return
-    end
-
+    # 공백 제거하고 비교
     available_potions = []
+    items_clean = items.gsub(/\s+/, "")
     POTION_TYPES.keys.each do |potion|
-      available_potions << potion if items.include?(potion)
+      potion_clean = potion.gsub(/\s+/, "")
+      available_potions << potion if items_clean.include?(potion_clean)
     end
 
     if available_potions.empty?
       user_name = user["이름"] || user_id
 
-      if state[:type] == "2v2"
-        handle_failed_potion_2v2(user_id, user_name, state)
+      if in_battle
+        if state[:type] == "2v2"
+          handle_failed_potion_2v2(user_id, user_name, state)
+        else
+          handle_failed_potion_1v1(user_id, user_name, state)
+        end
       else
-        handle_failed_potion_1v1(user_id, user_name, state)
+        @mastodon_client.reply(reply_status, "#{user_name}은(는) 물약이 없습니다.")
       end
       return
     end
 
+    # 물약 목록 표시
     if potion_type.nil?
       user_name = user["이름"] || user_id
       target_name = target["이름"] || target_id
@@ -114,44 +113,63 @@ class PotionCommand
       message += "━━━━━━━━━━━━━━━━━━\n"
       available_potions.each do |potion|
         heal = POTION_TYPES[potion]
-        message += "• #{potion} (회복: #{heal})\n"
+        # "소형물약" → "소형 물약"
+        potion_display = potion.gsub('물약', ' 물약').strip
+        message += "• #{potion_display} (회복: #{heal})\n"
       end
       message += "━━━━━━━━━━━━━━━━━━\n"
       message += "사용법:\n"
       if user_id == target_id
-        message += "[물약/소형] - 소형 물약 사용\n"
-        message += "[물약/중형] - 중형 물약 사용\n"
-        message += "[물약/대형] - 대형 물약 사용"
+        available_potions.each do |potion|
+          # "소형물약" → "소형"
+          potion_type_key = potion.gsub('물약', '')
+          # 표시용: "소형 물약"
+          potion_display = "#{potion_type_key} 물약"
+          message += "[물약/#{potion_type_key}] - #{potion_display} 사용\n"
+        end
+        message = message.chomp
       else
-        message += "[물약/소형/@#{target_id}] - #{target_name}에게 소형 물약\n"
-        message += "[물약/중형/@#{target_id}] - #{target_name}에게 중형 물약\n"
-        message += "[물약/대형/@#{target_id}] - #{target_name}에게 대형 물약"
+        available_potions.each do |potion|
+          potion_type_key = potion.gsub('물약', '')
+          potion_display = "#{potion_type_key} 물약"
+          message += "[물약/#{potion_type_key}/@#{target_id}] - #{target_name}에게 #{potion_display}\n"
+        end
+        message = message.chomp
       end
 
-      reply_to_battle(message, state)
+      if in_battle
+        reply_to_battle(message, state)
+      else
+        @mastodon_client.reply(reply_status, message)
+      end
       return
     end
 
+    # 물약 찾기
     potion_found = nil
     case potion_type
     when /소형/i
-      potion_found = "소형 물약" if items.include?("소형 물약")
+      potion_found = "소형물약" if items_clean.include?("소형물약")
     when /중형/i
-      potion_found = "중형 물약" if items.include?("중형 물약")
+      potion_found = "중형물약" if items_clean.include?("중형물약")
     when /대형/i
-      potion_found = "대형 물약" if items.include?("대형 물약")
-    when /기본|일반/i
-      potion_found = "물약" if items.include?("물약")
+      potion_found = "대형물약" if items_clean.include?("대형물약")
     end
 
     unless potion_found
       user_name = user["이름"] || user_id
       message = "#{user_name}은(는) 해당 종류의 물약이 없습니다.\n"
       message += "다시 [물약]으로 목록을 확인하세요."
-      reply_to_battle(message, state)
+      
+      if in_battle
+        reply_to_battle(message, state)
+      else
+        @mastodon_client.reply(reply_status, message)
+      end
       return
     end
 
+    # 물약 사용
     heal_amount = POTION_TYPES[potion_found]
     current_hp = (target["HP"] || 100).to_i
     new_hp = [current_hp + heal_amount, 100].min
@@ -166,54 +184,69 @@ class PotionCommand
 
     user_name = user["이름"] || user_id
     target_name = target["이름"] || target_id
+    potion_display = potion_found.gsub('물약', ' 물약').strip
 
-    if state[:type] == "2v2"
-      if user_id == target_id
-        message = "#{user_name}이(가) #{potion_found}을 사용했습니다.\n"
+    if in_battle
+      # 전투 중 물약 사용
+      if state[:type] == "2v2"
+        if user_id == target_id
+          message = "#{user_name}이(가) #{potion_display}을 사용했습니다.\n"
+        else
+          message = "#{user_name}이(가) #{target_name}에게 #{potion_display}을 사용했습니다.\n"
+        end
+        message += "회복: #{actual_heal} (#{current_hp} → #{new_hp})\n"
+        message += "━━━━━━━━━━━━━━━━━━\n"
+
+        state[:turn_index] += 1
+
+        if state[:turn_index] >= 4
+          require_relative '../core/battle_engine'
+          engine = BattleEngine.new(@mastodon_client, @sheet_manager)
+          engine.send(:process_2v2_round, state, message)
+        else
+          state[:current_turn] = state[:turn_order][state[:turn_index]]
+          next_player = @sheet_manager.find_user(state[:current_turn])
+          next_player_name = next_player["이름"] || state[:current_turn]
+
+          message += "#{next_player_name}의 차례\n"
+          message += "[공격/@타겟] [방어/@타겟] [반격] [물약사용] [도주]"
+
+          reply_to_battle(message, state)
+        end
       else
-        message = "#{user_name}이(가) #{target_name}에게 #{potion_found}을 사용했습니다.\n"
-      end
-      message += "회복: #{actual_heal} (#{current_hp} → #{new_hp})\n"
-      message += "━━━━━━━━━━━━━━━━━━\n"
+        # 1v1 또는 허수아비
+        if user_id == target_id
+          message = "#{user_name}이(가) #{potion_display}을 사용했습니다.\n"
+        else
+          message = "#{user_name}이(가) #{target_name}에게 #{potion_display}을 사용했습니다.\n"
+        end
+        message += "회복: #{actual_heal} (#{current_hp} → #{new_hp})\n"
+        message += "━━━━━━━━━━━━━━━━━━\n"
 
-      state[:turn_index] += 1
+        state[:current_turn] = state[:turn_order][(state[:turn_order].index(state[:current_turn]) + 1) % state[:turn_order].length]
 
-      if state[:turn_index] >= 4
-        require_relative '../core/battle_engine'
-        engine = BattleEngine.new(@mastodon_client, @sheet_manager)
-        engine.send(:process_2v2_round, state, message)
-      else
-        state[:current_turn] = state[:turn_order][state[:turn_index]]
-        next_player = @sheet_manager.find_user(state[:current_turn])
-        next_player_name = next_player["이름"] || state[:current_turn]
+        if state[:current_turn].to_s.include?("허수아비")
+          reply_to_battle(message, state)
+        else
+          next_player = @sheet_manager.find_user(state[:current_turn])
+          next_player_name = next_player ? (next_player["이름"] || state[:current_turn]) : state[:current_turn]
 
-        message += "#{next_player_name}의 차례\n"
-        message += "[공격/@타겟] [방어/@타겟] [반격] [물약사용] [도주]"
+          message += "#{next_player_name}의 차례\n"
+          message += "[공격] [방어] [반격] [물약사용] [도주]"
 
-        reply_to_battle(message, state)
+          reply_to_battle(message, state)
+        end
       end
     else
+      # 평상시 물약 사용
       if user_id == target_id
-        message = "#{user_name}이(가) #{potion_found}을 사용했습니다.\n"
+        message = "#{user_name}이(가) #{potion_display}을 사용했습니다.\n"
       else
-        message = "#{user_name}이(가) #{target_name}에게 #{potion_found}을 사용했습니다.\n"
+        message = "#{user_name}이(가) #{target_name}에게 #{potion_display}을 사용했습니다.\n"
       end
-      message += "회복: #{actual_heal} (#{current_hp} → #{new_hp})\n"
-      message += "━━━━━━━━━━━━━━━━━━\n"
+      message += "회복: #{actual_heal} (#{current_hp} → #{new_hp})"
 
-      state[:current_turn] = state[:turn_order][(state[:turn_order].index(state[:current_turn]) + 1) % state[:turn_order].length]
-
-      if state[:current_turn].to_s.include?("허수아비")
-        reply_to_battle(message, state)
-      else
-        next_player = @sheet_manager.find_user(state[:current_turn])
-        next_player_name = next_player ? (next_player["이름"] || state[:current_turn]) : state[:current_turn]
-
-        message += "#{next_player_name}의 차례\n"
-        message += "[공격] [방어] [반격] [물약사용] [도주]"
-
-        reply_to_battle(message, state)
-      end
+      @mastodon_client.reply(reply_status, message)
     end
   end
 
