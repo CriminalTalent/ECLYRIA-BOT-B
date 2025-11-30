@@ -33,6 +33,13 @@ class BattleState
     end
   end
 
+  # 사용자가 전투 중인지 확인
+  def self.player_in_battle?(user_id)
+    @mutex.synchronize do
+      @battles.values.any? { |state| state[:participants].include?(user_id) }
+    end
+  end
+
   # 전투 상태 업데이트
   def self.update(battle_id, updates)
     @mutex.synchronize do
