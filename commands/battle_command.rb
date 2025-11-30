@@ -31,7 +31,7 @@ class BattleCommand
         return
       end
 
-      # 👉 참가자 중 누가 이미 전투 중이면 거절
+      # 참가자 중 누가 이미 전투 중이면 거절
       if BattleState.player_in_battle?(u1) || BattleState.player_in_battle?(u2)
         @mastodon_client.reply(
           reply_status,
@@ -57,7 +57,7 @@ class BattleCommand
         return
       end
 
-      # 👉 4인 중 한 명이라도 이미 전투 중이면 거절
+      # 4인 중 한 명이라도 이미 전투 중이면 거절
       if [u1, u2, u3, u4].any? { |p| BattleState.player_in_battle?(p) }
         @mastodon_client.reply(
           reply_status,
@@ -107,7 +107,6 @@ class BattleCommand
     # ============================
     # 허수아비 (연습전)
     # [허수아비 하/중/상]
-    # -> 플레이어가 이미 전투 중이면 금지
     # ============================
     when /\[허수아비\s*(하|중|상)\]/i
       diff = Regexp.last_match(1)
