@@ -30,23 +30,8 @@ class CommandParser
   def parse(text, user_id, reply_status)
     text = text.strip
     
-    # 명령어 대괄호 안의 내용은 보존하면서 외부의 봇 멘션만 제거
-    # 1. 명령어 부분 임시 저장
-    commands = []
-    temp_text = text.gsub(/\[([^\]]+)\]/) do |match|
-      commands << match
-      "__CMD#{commands.length - 1}__"
-    end
-    
-    # 2. 외부 멘션만 제거
-    temp_text = temp_text.gsub(/@\S+\s*/, '').strip
-    
-    # 3. 명령어 복원
-    commands.each_with_index do |cmd, idx|
-      temp_text = temp_text.sub("__CMD#{idx}__", cmd)
-    end
-    
-    clean_text = temp_text
+    # 멘션 제거 (명령어만 추출)
+    clean_text = text.gsub(/@\S+\s*/, '').strip
     
     puts "[전투봇] 명령 수신: #{clean_text} (from @#{user_id})"
 
@@ -69,24 +54,6 @@ class CommandParser
 
     when /\[회복\]/i, /\[힐\]/i
       @heal_command.use_potion(user_id, reply_status)
-
-    # 제3자가 두 사람의 전투 시작 (먼저 체크해야 함)
-    when /\[전투개시\/@?(\S+)\/@?(\S+)\]/i
-      user1 = Regexp.last_match(1)
-      user2 = Regexp.last_match(2)
-      
-      # 두 사용자가 모두 등록되어 있는지 확인
-      player1 = @sheet_manager.find_user(user1)
-      player2 = @sheet_manager.find_user(user2)
-      
-      unless player1 && player2
-        missing = []
-        missing << user1 unless player1
-        missing << user2 unless player2
-        @mastodon_client.reply(reply_status, "@#{user_id} 등록되지 않은 사용자: #{missing.join(', ')}")
-      else
-        @battle_command.handle_command(user_id, "[전투 #{user1} vs #{user2}]", reply_status)
-      end
 
     when /\[전투개시\/@?(\S+)\]/i
       target = Regexp.last_match(1)
@@ -126,20 +93,25 @@ class CommandParser
     when /\[도주\]/i
       @battle_command.handle_command(user_id, "[도주]", reply_status)
 
-    when /\[물약사용\/(\S+)\/@?(\S+)\]/i
+    # === 물약 명령어 (간소화된 형식) ===
+    when /\[물약\/(\S+)\/@?(\S+)\]/i
+      # [물약/소형/@Test] - 대상에게 물약 사용
       potion_type = Regexp.last_match(1)
       target = Regexp.last_match(2)
       @potion_command.use_potion_for_target(user_id, reply_status, potion_type, target)
 
-    when /\[물약사용\/@?(\S+)\]/i
+    when /\[물약\/@?(\S+)\]/i
+      # [물약/@Test] - 대상에게 물약 사용 (종류 선택)
       target = Regexp.last_match(1)
       @potion_command.use_potion_for_target(user_id, reply_status, nil, target)
 
-    when /\[물약사용\/(\S+)\]/i
+    when /\[물약\/(\S+)\]/i
+      # [물약/소형] - 자신에게 물약 사용
       potion_type = Regexp.last_match(1)
       @potion_command.use_potion(user_id, reply_status, potion_type)
 
-    when /\[물약사용\]/i
+    when /\[물약사용\]/i, /\[물약\]/i
+      # [물약사용] 또는 [물약] - 목록 표시
       @potion_command.use_potion(user_id, reply_status)
 
     when /\[전투\s*중단\]/i, /\[전투중단\]/i
