@@ -1,128 +1,128 @@
+require_relative '../core/battle_state'
 require_relative '../core/battle_engine'
 
 class BattleCommand
   def initialize(mastodon_client, sheet_manager)
     @mastodon_client = mastodon_client
-    @sheet_manager = sheet_manager
-    @engine = BattleEngine.new(mastodon_client, sheet_manager)
+    @sheet_manager   = sheet_manager
+    @engine          = BattleEngine.new(mastodon_client, sheet_manager)
   end
 
   def handle_command(user_id, text, reply_status)
     puts "[BattleCommand] handle_command: #{text} from #{user_id}"
-    
+
     sanitize = ->(s) { s.to_s.gsub(/\p{Cf}/, '').strip.sub(/\A@+/, '') }
-    
+
     case text
+    # ============================
+    # 1:1 전투 시작
+    # [전투 Snow_White vs Bridget]
+    # ============================
     when /\A\[전투\s+@?(\S+)\s+vs\s+@?(\S+)\]\z/i
       raw1, raw2 = $1, $2
       puts "[BattleCommand] regex captures: #{raw1.inspect}, #{raw2.inspect}"
+
       u1 = sanitize.call(raw1)
       u2 = sanitize.call(raw2)
+
       if u1.empty? || u2.empty?
         puts "[BattleCommand] invalid 1v1 args: u1=#{u1.inspect}, u2=#{u2.inspect}"
+        @mastodon_client.reply(reply_status, "@#{user_id} 전투 참가자를 인식하지 못했습니다.")
         return
       end
 
-      # 전투 중복 참가 방지: 참가자 중 이미 전투 중인 사람이 있으면 막기
-      conflicted = [u1, u2].find { |id| user_in_battle?(id) }
-      if conflicted
-        @mastodon_client.reply(reply_status, "@#{conflicted} 이미 전투 중입니다! 먼저 전투를 마치세요.")
-        puts "[BattleCommand] blocked start_1v1: #{conflicted} already in battle"
+      # 👉 참가자 중 누가 이미 전투 중이면 거절
+      if BattleState.player_in_battle?(u1) || BattleState.player_in_battle?(u2)
+        @mastodon_client.reply(
+          reply_status,
+          "@#{user_id} 이미 전투에 참여 중인 플레이어가 있어 이 조합으로는 전투를 시작할 수 없습니다."
+        )
         return
       end
 
       puts "[BattleCommand] -> start_1v1 #{u1} vs #{u2}"
       @engine.start_1v1(u1, u2, reply_status)
-    
+
+    # ============================
+    # 2:2 다인 전투 시작
+    # [다인전투/@A/@B/@C/@D]
+    # ============================
     when /\A\[다인전투\/@?(\S+)\/@?(\S+)\/@?(\S+)\/@?(\S+)\]\z/i
       a, b, c, d = $1, $2, $3, $4
       u1, u2, u3, u4 = [a, b, c, d].map { |x| sanitize.call(x) }
+
       if [u1, u2, u3, u4].any?(&:empty?)
         puts "[BattleCommand] invalid 2v2 args: #{[u1, u2, u3, u4].inspect}"
+        @mastodon_client.reply(reply_status, "@#{user_id} 다인전투 참가자를 인식하지 못했습니다.")
         return
       end
 
-      # 전투 중복 참가 방지: 네 명 중 이미 전투 중인 사람이 있으면 막기
-      conflicted = [u1, u2, u3, u4].find { |id| user_in_battle?(id) }
-      if conflicted
-        @mastodon_client.reply(reply_status, "@#{conflicted} 이미 전투 중입니다! 먼저 전투를 마치세요.")
-        puts "[BattleCommand] blocked start_2v2: #{conflicted} already in battle"
+      # 👉 4인 중 한 명이라도 이미 전투 중이면 거절
+      if [u1, u2, u3, u4].any? { |p| BattleState.player_in_battle?(p) }
+        @mastodon_client.reply(
+          reply_status,
+          "@#{user_id} 이미 전투에 참여 중인 플레이어가 있어서 이 조합으로는 다인전투를 시작할 수 없습니다."
+        )
         return
       end
 
       puts "[BattleCommand] -> start_2v2 #{u1}, #{u2} vs #{u3}, #{u4}"
       @engine.start_2v2(u1, u2, u3, u4, reply_status)
-    
+
+    # ============================
+    # 공격
+    # ============================
     when /\[공격\/@?(\S+)\]/i
       target = sanitize.call($1)
       puts "[BattleCommand] -> attack with target: #{target}"
       @engine.attack(user_id, target)
-    
+
     when /\[공격\]/i
       puts "[BattleCommand] -> attack (no target)"
       @engine.attack(user_id)
-    
+
+    # ============================
+    # 방어
+    # ============================
     when /\[방어\/@?(\S+)\]/i
       target = sanitize.call($1)
       puts "[BattleCommand] -> defend target: #{target}"
       @engine.defend_target(user_id, target)
-    
+
     when /\[방어\]/i
       puts "[BattleCommand] -> defend"
       @engine.defend(user_id)
-    
+
+    # ============================
+    # 반격 / 도주
+    # ============================
     when /\[반격\]/i
       puts "[BattleCommand] -> counter"
       @engine.counter(user_id)
-    
+
     when /\[도주\]/i
       puts "[BattleCommand] -> flee"
       @engine.flee(user_id)
-    
+
+    # ============================
+    # 허수아비 (연습전)
+    # [허수아비 하/중/상]
+    # -> 플레이어가 이미 전투 중이면 금지
+    # ============================
     when /\[허수아비\s*(하|중|상)\]/i
       diff = Regexp.last_match(1)
-      puts "[BattleCommand] -> dummy #{diff}"
-
-      # 허수아비 전투도 "한 사람 한 전투" 원칙 적용
-      if user_in_battle?(user_id)
-        @mastodon_client.reply(reply_status, "@#{user_id} 이미 전투 중입니다! 먼저 전투를 마치세요.")
-        puts "[BattleCommand] blocked dummy battle: #{user_id} already in battle"
+      if BattleState.player_in_battle?(user_id)
+        @mastodon_client.reply(
+          reply_status,
+          "@#{user_id} 이미 다른 전투에 참여 중이라 허수아비 연습전은 시작할 수 없습니다."
+        )
         return
       end
-
+      puts "[BattleCommand] -> dummy #{diff}"
       @engine.start_dummy_battle(user_id, diff, reply_status)
-    
+
     else
       puts "[BattleCommand] unknown: #{text}"
-    end
-  rescue => e
-    puts "[BattleCommand] 오류: #{e.class}: #{e.message}"
-    puts e.backtrace.first(5)
-    @mastodon_client.reply(reply_status, "전투 명령 처리 중 오류가 발생했습니다.")
-  end
-
-  private
-
-  # 주어진 ID가 이미 어떤 전투에 참가 중인지 확인
-  # - BattleState.find_by_user(id)가 있으면 그걸 우선 사용
-  # - 없으면 기존 단일 상태(BattleState.get)의 participants 기준으로 확인
-  def user_in_battle?(user_id)
-    begin
-      if defined?(BattleState) && BattleState.respond_to?(:find_by_user)
-        !!BattleState.find_by_user(user_id)
-      else
-        if defined?(BattleState) && BattleState.respond_to?(:get)
-          state = BattleState.get
-          return false unless state
-          participants = state[:participants] || []
-          participants.respond_to?(:include?) && participants.include?(user_id)
-        else
-          false
-        end
-      end
-    rescue => e
-      puts "[BattleCommand] user_in_battle? 체크 중 오류: #{e.class}: #{e.message}"
-      false
     end
   end
 end
