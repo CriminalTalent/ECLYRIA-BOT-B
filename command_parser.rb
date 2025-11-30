@@ -110,18 +110,16 @@ class CommandParser
       potion_type = Regexp.last_match(1)
       @potion_command.use_potion(user_id, reply_status, potion_type)
 
-    when /\[물약사용\]/i, /\[물약\]/i
-      # [물약사용] 또는 [물약] - 목록 표시
-      @potion_command.use_potion(user_id, reply_status)
-
     when /\[전투\s*중단\]/i, /\[전투중단\]/i
       require_relative 'core/battle_state'
-      if BattleState.get && !BattleState.get.empty?
-        @mastodon_client.reply(reply_status, "전투가 중단되었습니다.")
-        BattleState.clear
-      else
-        @mastodon_client.reply(reply_status, "진행 중인 전투가 없습니다.")
-      end
+      battle_id = BattleState.battle_of(user_id)
+        if battle_id
+          state = BattleState.get(battle_id)
+          @mastodon_client.reply(reply_status, "전투가 중단되었습니다.")
+          BattleState.clear(battle_id)
+        else
+          @mastodon_client.reply(reply_status, "진행 중인 전투가 없습니다.")
+        end
 
     when /\[조사시작\]/i,
          /\[조사\/.+\]/i,
