@@ -119,13 +119,13 @@ class PotionCommand
       message += "━━━━━━━━━━━━━━━━━━\n"
       message += "사용법:\n"
       if user_id == target_id
-        message += "[물약사용/소형] - 소형 물약 사용\n"
-        message += "[물약사용/중형] - 중형 물약 사용\n"
-        message += "[물약사용/대형] - 대형 물약 사용"
+        message += "[물약/소형] - 소형 물약 사용\n"
+        message += "[물약/중형] - 중형 물약 사용\n"
+        message += "[물약/대형] - 대형 물약 사용"
       else
-        message += "[물약사용/소형/@#{target_id}] - #{target_name}에게 소형 물약\n"
-        message += "[물약사용/중형/@#{target_id}] - #{target_name}에게 중형 물약\n"
-        message += "[물약사용/대형/@#{target_id}] - #{target_name}에게 대형 물약"
+        message += "[물약/소형/@#{target_id}] - #{target_name}에게 소형 물약\n"
+        message += "[물약/중형/@#{target_id}] - #{target_name}에게 중형 물약\n"
+        message += "[물약/대형/@#{target_id}] - #{target_name}에게 대형 물약"
       end
 
       reply_to_battle(message, state)
@@ -147,7 +147,7 @@ class PotionCommand
     unless potion_found
       user_name = user["이름"] || user_id
       message = "#{user_name}은(는) 해당 종류의 물약이 없습니다.\n"
-      message += "다시 [물약사용]으로 목록을 확인하세요."
+      message += "다시 [물약]으로 목록을 확인하세요."
       reply_to_battle(message, state)
       return
     end
