@@ -1,6 +1,9 @@
 class BattleState
   @battles = {}
   @mutex = Mutex.new
+  
+  # GM 계정 목록 (중복 전투 개최 가능)
+  GM_ACCOUNTS = ['Story', 'professor', 'Store', 'FortunaeFons'].freeze
 
   # 새 전투 생성
   def self.create(participants, state_data)
@@ -18,23 +21,29 @@ class BattleState
     end
   end
 
-  # 사용자가 참여 중인 전투 찾기
+  # 사용자가 참여 중인 전투 찾기 (GM 계정은 항상 nil)
   def self.find_by_user(user_id)
+    return nil if GM_ACCOUNTS.include?(user_id)
+    
     @mutex.synchronize do
       @battles.values.find { |state| state[:participants].include?(user_id) }
     end
   end
 
-  # 사용자의 전투 ID 찾기
+  # 사용자의 전투 ID 찾기 (GM 계정은 항상 nil)
   def self.find_battle_id_by_user(user_id)
+    return nil if GM_ACCOUNTS.include?(user_id)
+    
     @mutex.synchronize do
       battle = @battles.find { |id, state| state[:participants].include?(user_id) }
       battle ? battle[0] : nil
     end
   end
 
-  # 사용자가 전투 중인지 확인
+  # 사용자가 전투 중인지 확인 (GM 계정은 항상 false)
   def self.player_in_battle?(user_id)
+    return false if GM_ACCOUNTS.include?(user_id)
+    
     @mutex.synchronize do
       @battles.values.any? { |state| state[:participants].include?(user_id) }
     end
