@@ -25,11 +25,10 @@ class PotionCommand
 
   def use_potion_internal(user_id, target_id, reply_status, potion_type)
     puts "[디버그] use_potion_internal 시작: user_id=#{user_id}, target_id=#{target_id}, potion_type=#{potion_type}"
-
-    battle_id = BattleState.battle_of(user_id)
-    state = battle_id ? BattleState.get(battle_id) : nil
+    
+    state = BattleState.get
     in_battle = state && !state.empty?
-
+    
     # 전투 중이면 턴 확인
     if in_battle && state[:current_turn].to_s != user_id.to_s
       @mastodon_client.reply(reply_status, "당신의 턴이 아닙니다.")
@@ -39,7 +38,7 @@ class PotionCommand
     # 스탯 시트에서 전투 정보 조회
     user = @sheet_manager.find_user(user_id)
     target = @sheet_manager.find_user(target_id)
-
+    
     puts "[디버그] user 찾기 결과: #{user ? '성공' : '실패'}"
     puts "[디버그] target 찾기 결과: #{target ? '성공' : '실패'}"
 
@@ -61,10 +60,10 @@ class PotionCommand
 
     # 사용자 시트에서 아이템 정보 조회
     user_data = @sheet_manager.find_user_items(user_id)
-
+    
     puts "[디버그] find_user_items 결과: #{user_data ? '성공' : '실패'}"
     puts "[디버그] user_data 내용: #{user_data.inspect}" if user_data
-
+    
     unless user_data
       user_name = user["이름"] || user_id
       if in_battle
@@ -80,7 +79,7 @@ class PotionCommand
     end
 
     items = (user_data["아이템"] || "").strip
-
+    
     puts "[디버그] 아이템 목록: #{items.inspect}"
 
     # 공백 제거하고 비교
@@ -161,7 +160,7 @@ class PotionCommand
       user_name = user["이름"] || user_id
       message = "#{user_name}은(는) 해당 종류의 물약이 없습니다.\n"
       message += "다시 [물약]으로 목록을 확인하세요."
-
+      
       if in_battle
         reply_to_battle(message, state)
       else
@@ -178,7 +177,7 @@ class PotionCommand
 
     # 스탯 시트 HP 업데이트
     @sheet_manager.update_user(target_id, { hp: new_hp })
-
+    
     # 사용자 시트 아이템 업데이트
     new_items = items.sub(potion_found, "").gsub(/,+/, ",").gsub(/^,|,$/, "").strip
     @sheet_manager.update_user_items(user_id, { items: new_items })
