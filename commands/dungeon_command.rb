@@ -1,5 +1,5 @@
 # commands/dungeon_command.rb
-# 공동목표 명령어 (클라리스 오르이 소탕전)
+# 공동목표 명령어 (클라리스 오르 소탕전)
 
 require_relative '../core/dungeon_system'
 require_relative '../core/dungeon_battle'
@@ -114,7 +114,7 @@ class DungeonCommand
     msg += "\n"
     
     # 적 정보
-    msg += "클라리스 오르이 조직원 출현:\n"
+    msg += "클라리스 오르 조직원 출현:\n"
     dungeon[:enemies].each do |enemy|
       msg += "- #{enemy[:name]} (HP: #{enemy[:max_hp]})\n"
     end
