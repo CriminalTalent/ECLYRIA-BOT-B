@@ -1,5 +1,5 @@
 # core/dungeon_system.rb
-# 공동목표 시스템 (클라리스 오르이 소탕전)
+# 공동목표 시스템 (클라리스 오르 소탕전)
 
 require 'json'
 
