@@ -4,6 +4,7 @@ require_relative 'commands/potion_command'
 require_relative 'commands/heal_command'
 require_relative 'commands/dm_investigation_command'
 require_relative 'commands/hp_command'
+require_relative 'commands/dungeon_command'
 
 class CommandParser
   def initialize(mastodon_client, sheet_manager)
@@ -16,6 +17,7 @@ class CommandParser
     @heal_command = HealCommand.new(mastodon_client, sheet_manager)
     @dm_investigation_command = DMInvestigationCommand.new(mastodon_client, sheet_manager)
     @hp_command = HpCommand.new(mastodon_client, sheet_manager)
+    @dungeon_command = DungeonCommand.new(mastodon_client, sheet_manager)
   end
 
   def handle(status)
@@ -51,6 +53,18 @@ class CommandParser
     puts "[전투봇] 명령 수신: #{clean_text} (from @#{user_id})"
 
     case clean_text
+    # ============================
+    # 공동목표 및 레이드
+    # ============================
+    when /\[공동목표\/(B[2-5])\/((?:@\S+\/)*@\S+)\]/i,
+         /\[레이드\/(B[2-5])\/((?:@\S+\/)*@\S+)\]/i,
+         /\[맵보기\]/i,
+         /\[목표상태\]/i,
+         /\[이동\/(상|하|좌|우|좌상|우상|좌하|우하)\]/i,
+         /\[목표공격\]/i,
+         /\[목표포기\]/i
+      @dungeon_command.handle_command(user_id, clean_text, reply_status)
+
     # ============================
     # HP 확인
     # ============================
