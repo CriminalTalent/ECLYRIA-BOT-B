@@ -20,7 +20,32 @@ class MastodonClient
 
     @bot_username = (ENV['BOT_USERNAME'] || 'battle').downcase
     @bot_acct = @bot_username
+    
+    # 멘션 처리 기록 (중복 방지)
+    @processed_mentions = Set.new
+    @processed_mutex = Mutex.new
+    
     puts "[봇 계정] @#{@bot_username}"
+  end
+
+  # 멘션이 이미 처리되었는지 확인
+  def mention_processed?(mention_id)
+    @processed_mutex.synchronize do
+      @processed_mentions.include?(mention_id)
+    end
+  end
+
+  # 멘션 처리 완료 기록
+  def mark_mention_processed(mention_id)
+    @processed_mutex.synchronize do
+      @processed_mentions.add(mention_id)
+      
+      # 메모리 관리: 1000개 이상 쌓이면 오래된 것 삭제
+      if @processed_mentions.size > 1000
+        oldest = @processed_mentions.to_a.first(500)
+        oldest.each { |id| @processed_mentions.delete(id) }
+      end
+    end
   end
 
   def notifications(limit: 40)
@@ -44,27 +69,54 @@ class MastodonClient
   end
 
   def stream_user(&block)
-    puts "[마스토돈] user 스트림 구독 시작... (@#{@bot_username} 멘션만 처리)"
+    puts "[마스토돈] user 스트림 구독 시작... (@#{@bot_username} 멘션 감지)"
 
     @streamer.user do |event|
       begin
-        # Notification 이벤트만 처리 (중복 방지)
+        # Notification 이벤트만 처리
         if event.is_a?(Mastodon::Notification)
           next unless event.type == "mention"
           next unless event.status
 
           status = deep_symbolize(event.status.to_h)
           next unless status[:account] && status[:account][:acct]
+          
+          mention_id = status[:id]
+          
+          # 중복 처리 방지
+          if mention_processed?(mention_id)
+            puts "[중복 스킵] 이미 처리된 멘션: #{mention_id}"
+            next
+          end
 
+          # 멘션 확인 (여러 방식으로 감지)
+          has_battle_mention = false
+          
+          # 1. mentions 필드 확인
           if status[:mentions] && status[:mentions].any?
             has_battle_mention = status[:mentions].any? do |mention|
-              mention[:username].to_s.downcase == @bot_username.downcase ||
-              mention[:acct].to_s.downcase == @bot_acct.downcase
+              username = mention[:username].to_s.downcase
+              acct = mention[:acct].to_s.downcase
+              username == @bot_username || acct == @bot_acct || acct.start_with?("#{@bot_username}@")
             end
+          end
+          
+          # 2. content에서 직접 검색 (백업)
+          unless has_battle_mention
+            content = status[:content].to_s
+            # HTML 태그 제거
+            clean_content = content.gsub(/<[^>]+>/, '')
+            has_battle_mention = clean_content =~ /@#{@bot_username}\b/i
+          end
+          
+          if has_battle_mention
+            puts "[멘션 감지] #{mention_id} from @#{status[:account][:acct]}"
+            mark_mention_processed(mention_id)
             
-            if has_battle_mention
-              block.call(status)
-            end
+            # 콜백 실행
+            block.call(status)
+          else
+            puts "[멘션 없음] #{mention_id} - 봇 멘션이 없음"
           end
         end
 
