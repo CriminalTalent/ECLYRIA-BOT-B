@@ -1,18 +1,758 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-<meta charset="UTF-8">
-<title>관리자 맵 편집</title>
-<link rel="stylesheet" href="styles.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>관리자 맵 편집</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        /* 추가 관리자 전용 스타일 */
+        body {
+            background: linear-gradient(135deg, #b8dfd8 0%, #73c2be 100%);
+        }
+
+        .admin-container {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .admin-header {
+            background: white;
+            padding: 30px;
+            border-radius: 16px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+
+        .admin-header h1 {
+            color: #4a9b96;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .admin-header .subtitle {
+            color: #666;
+            font-size: 1.1em;
+        }
+
+        .nav-buttons {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            margin-top: 20px;
+        }
+
+        .nav-buttons .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1em;
+            font-weight: bold;
+            transition: all 0.3s ease;
+        }
+
+        .btn-primary {
+            background: #4a9b96;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #3d8580;
+            transform: translateY(-2px);
+        }
+
+        .control-panel {
+            background: white;
+            padding: 30px;
+            border-radius: 16px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .control-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            font-size: 1em;
+            transition: border-color 0.3s;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #4a9b96;
+        }
+
+        .floor-selector {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+        }
+
+        .floor-btn {
+            padding: 12px 30px;
+            border: 2px solid #4a9b96;
+            background: white;
+            color: #4a9b96;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1em;
+            font-weight: bold;
+            transition: all 0.3s ease;
+        }
+
+        .floor-btn:hover {
+            background: #b8dfd8;
+            color: white;
+            transform: translateY(-2px);
+        }
+
+        .floor-btn.active {
+            background: #4a9b96;
+            color: white;
+        }
+
+        .grid-container {
+            background: white;
+            padding: 30px;
+            border-radius: 16px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .grid-container h2 {
+            color: #4a9b96;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 40px repeat(8, 60px);
+            grid-template-rows: 40px repeat(8, 60px);
+            gap: 2px;
+            background: #e0e0e0;
+            padding: 2px;
+            border-radius: 8px;
+            margin: 0 auto;
+            width: fit-content;
+        }
+
+        .grid-cell {
+            width: 60px;
+            height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.8em;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            position: relative;
+            border-radius: 4px;
+            font-weight: 500;
+            border: 2px solid transparent;
+        }
+
+        .grid-cell:hover:not(.header-cell) {
+            transform: scale(1.05);
+            z-index: 10;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        }
+
+        .grid-cell.selected {
+            border: 3px solid #f7a4a4 !important;
+            box-shadow: 0 0 15px rgba(247, 164, 164, 0.5);
+        }
+
+        .header-cell {
+            background: #f5f5f5;
+            color: #4a9b96;
+            font-weight: bold;
+            cursor: default;
+        }
+
+        .cell-wall {
+            background: #6b7c8f;
+            color: white;
+        }
+
+        .cell-corridor {
+            background: #f5f9f8;
+            color: #4a5568;
+        }
+
+        .cell-room {
+            background: #9bc4c0;
+            color: white;
+        }
+
+        .cell-entrance {
+            background: #73c2be;
+            color: white;
+        }
+
+        .tile-editor {
+            background: white;
+            padding: 30px;
+            border-radius: 16px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .tile-editor h3 {
+            color: #4a9b96;
+            margin-bottom: 20px;
+        }
+
+        .tile-editor-content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .legend {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin: 20px 0;
+            flex-wrap: wrap;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .legend-box {
+            width: 30px;
+            height: 30px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin-top: 30px;
+        }
+
+        .btn {
+            padding: 12px 30px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1em;
+            font-weight: bold;
+            transition: all 0.3s ease;
+        }
+
+        .btn-success {
+            background: #73c2be;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #5fb3ae;
+            transform: translateY(-2px);
+        }
+
+        .btn-danger {
+            background: #f7a4a4;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #f58b8b;
+            transform: translateY(-2px);
+        }
+
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 15px 25px;
+            border-radius: 8px;
+            color: white;
+            font-weight: bold;
+            z-index: 2000;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(400px);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        .notification.success { background: #73c2be; }
+        .notification.error { background: #f7a4a4; }
+        .notification.info { background: #9bc4c0; }
+
+        .status-info {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid #4a9b96;
+        }
+
+        .status-info strong {
+            color: #4a9b96;
+        }
+    </style>
 </head>
 <body>
-<h1>관리자 맵 설정</h1>
-<select id="floorSelect"></select>
+    <div class="admin-container">
+        <!-- 헤더 -->
+        <div class="admin-header">
+            <h1>관리자 맵 설정</h1>
+            <p class="subtitle">맵 구조 및 타일 편집</p>
+            <div class="nav-buttons">
+                <button class="btn btn-primary" onclick="window.location.href='/map'">실시간 맵 보기</button>
+            </div>
+        </div>
 
-<div id="gridEditor" class="grid"></div>
+        <!-- 층 선택 -->
+        <div class="control-panel">
+            <h3 style="color: #4a9b96; margin-bottom: 20px; text-align: center;">층 선택</h3>
+            <div class="floor-selector" id="floorSelector">
+                <!-- 동적으로 생성됨 -->
+            </div>
+        </div>
 
-<button id="saveBtn">저장</button>
+        <!-- 층 정보 편집 -->
+        <div class="control-panel">
+            <h3 style="color: #4a9b96; margin-bottom: 20px;">층 정보 설정</h3>
+            <div class="control-row">
+                <div class="form-group">
+                    <label>층 이름</label>
+                    <input type="text" id="floorName" placeholder="예: 마법 도서관 / B3층">
+                </div>
+                <div class="form-group">
+                    <label>난이도</label>
+                    <select id="floorDifficulty">
+                        <option value="쉬움">쉬움</option>
+                        <option value="보통">보통</option>
+                        <option value="어려움">어려움</option>
+                        <option value="매우 어려움">매우 어려움</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>조사 유형</label>
+                    <select id="floorInvestigationType">
+                        <option value="조사">조사</option>
+                        <option value="정밀조사">정밀조사</option>
+                        <option value="감지">감지</option>
+                        <option value="훔쳐보기">훔쳐보기</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>입구 좌표</label>
+                    <input type="text" id="floorEntrance" placeholder="예: B3-D8">
+                </div>
+            </div>
+            <button class="btn btn-success" onclick="updateFloorInfo()">층 정보 저장</button>
+        </div>
 
-<script src="admin.js"></script>
+        <!-- 타일 편집 -->
+        <div class="tile-editor">
+            <h3>타일 편집</h3>
+            <div class="status-info" id="selectedInfo">
+                타일을 클릭하여 선택하세요
+            </div>
+            <div class="tile-editor-content">
+                <div class="form-group">
+                    <label>선택된 좌표</label>
+                    <input type="text" id="selectedCoord" readonly placeholder="타일을 클릭하세요">
+                </div>
+                <div class="form-group">
+                    <label>타일 타입</label>
+                    <select id="tileType" onchange="updateTileTypePreview()">
+                        <option value="wall">벽</option>
+                        <option value="corridor">복도</option>
+                        <option value="room">방</option>
+                        <option value="entrance">입구</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>타일 이름</label>
+                    <input type="text" id="tileName" placeholder="예: 고서 보관실">
+                </div>
+                <div class="form-group">
+                    <button class="btn btn-primary" onclick="updateTile()" style="width: 100%;">타일 저장</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 범례 -->
+        <div class="legend">
+            <div class="legend-item">
+                <div class="legend-box cell-wall"></div>
+                <span>벽</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-box cell-corridor"></div>
+                <span>복도</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-box cell-room"></div>
+                <span>방</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-box cell-entrance"></div>
+                <span>입구</span>
+            </div>
+        </div>
+
+        <!-- 맵 그리드 -->
+        <div class="grid-container">
+            <h2>맵 편집 그리드</h2>
+            <div class="grid" id="gridEditor">
+                <!-- 동적으로 생성됨 -->
+            </div>
+        </div>
+
+        <!-- 저장 버튼 -->
+        <div class="action-buttons">
+            <button class="btn btn-success" onclick="saveAllChanges()" style="font-size: 1.2em; padding: 15px 40px;">
+                모든 변경사항 저장
+            </button>
+            <button class="btn btn-danger" onclick="resetMap()">
+                현재 층 초기화
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // 전역 변수
+        let currentFloor = 'B3';
+        let allMapData = {};
+        let selectedCoord = null;
+
+        // 페이지 로드 시 초기화
+        window.addEventListener('DOMContentLoaded', async () => {
+            await loadAllFloors();
+            await loadMap(currentFloor);
+        });
+
+        // 모든 층 데이터 로드
+        async function loadAllFloors() {
+            try {
+                const response = await fetch('/api/floors');
+                const data = await response.json();
+                
+                if (data.success) {
+                    const selector = document.getElementById('floorSelector');
+                    selector.innerHTML = '';
+                    
+                    data.floors.forEach(floor => {
+                        const btn = document.createElement('button');
+                        btn.className = 'floor-btn';
+                        btn.textContent = `${floor.name}`;
+                        btn.dataset.floor = floor.code;
+                        
+                        if (floor.code === currentFloor) {
+                            btn.classList.add('active');
+                        }
+                        
+                        btn.addEventListener('click', () => {
+                            currentFloor = floor.code;
+                            loadMap(currentFloor);
+                            
+                            document.querySelectorAll('.floor-btn').forEach(b => {
+                                b.classList.remove('active');
+                            });
+                            btn.classList.add('active');
+                        });
+                        
+                        selector.appendChild(btn);
+                    });
+                }
+            } catch (error) {
+                console.error('층 목록 로드 실패:', error);
+            }
+        }
+
+        // 맵 데이터 로드
+        async function loadMap(floor) {
+            try {
+                const response = await fetch(`/api/map-json/${floor}`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    if (!allMapData[floor]) {
+                        allMapData[floor] = {};
+                    }
+                    allMapData[floor] = data.floor;
+                    
+                    // 폼에 층 정보 표시
+                    document.getElementById('floorName').value = data.floor.name || '';
+                    document.getElementById('floorDifficulty').value = data.floor.difficulty || '보통';
+                    document.getElementById('floorInvestigationType').value = data.floor.investigation_type || '조사';
+                    document.getElementById('floorEntrance').value = data.floor.entrance || '';
+                    
+                    renderGrid();
+                } else {
+                    showNotification('맵 데이터를 불러올 수 없습니다', 'error');
+                }
+            } catch (error) {
+                console.error('맵 로드 실패:', error);
+                showNotification('맵 로드 실패', 'error');
+            }
+        }
+
+        // 맵 렌더링
+        function renderGrid() {
+            const grid = document.getElementById('gridEditor');
+            const floorData = allMapData[currentFloor];
+            
+            if (!floorData) {
+                grid.innerHTML = '<div style="padding: 40px; text-align: center; color: #999;">맵 데이터 없음</div>';
+                return;
+            }
+            
+            grid.innerHTML = '';
+
+            // 코너
+            const corner = document.createElement('div');
+            corner.className = 'grid-cell header-cell';
+            grid.appendChild(corner);
+
+            // 열 라벨
+            for (let col of ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']) {
+                const label = document.createElement('div');
+                label.className = 'grid-cell header-cell';
+                label.textContent = col;
+                grid.appendChild(label);
+            }
+
+            // 행별 렌더링
+            for (let row = 1; row <= 8; row++) {
+                const rowLabel = document.createElement('div');
+                rowLabel.className = 'grid-cell header-cell';
+                rowLabel.textContent = row;
+                grid.appendChild(rowLabel);
+
+                for (let col of ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']) {
+                    const coord = `${currentFloor}-${col}${row}`;
+                    const tileData = floorData.grid && floorData.grid[coord];
+                    
+                    const tile = document.createElement('div');
+                    tile.className = 'grid-cell';
+                    tile.dataset.coord = coord;
+                    
+                    if (tileData) {
+                        tile.classList.add(`cell-${tileData.type}`);
+                        tile.textContent = tileData.name;
+                        tile.title = `${coord}: ${tileData.name}`;
+                    } else {
+                        tile.classList.add('cell-wall');
+                        tile.textContent = '?';
+                    }
+                    
+                    // 클릭 이벤트
+                    tile.addEventListener('click', () => selectTile(coord, tileData));
+                    
+                    grid.appendChild(tile);
+                }
+            }
+        }
+
+        // 타일 선택
+        function selectTile(coord, tileData) {
+            // 이전 선택 제거
+            document.querySelectorAll('.grid-cell.selected').forEach(cell => {
+                cell.classList.remove('selected');
+            });
+            
+            // 새 선택 추가
+            const cell = document.querySelector(`[data-coord="${coord}"]`);
+            if (cell) {
+                cell.classList.add('selected');
+            }
+            
+            selectedCoord = coord;
+            document.getElementById('selectedCoord').value = coord;
+            
+            if (tileData) {
+                document.getElementById('tileType').value = tileData.type || 'wall';
+                document.getElementById('tileName').value = tileData.name || '';
+                document.getElementById('selectedInfo').innerHTML = 
+                    `<strong>선택됨:</strong> ${coord} - ${tileData.name} (${tileData.type})`;
+            } else {
+                document.getElementById('tileType').value = 'wall';
+                document.getElementById('tileName').value = '벽';
+                document.getElementById('selectedInfo').innerHTML = 
+                    `<strong>선택됨:</strong> ${coord} - 새 타일`;
+            }
+            
+            showNotification(`${coord} 타일 선택됨`, 'info');
+        }
+
+        // 층 정보 업데이트
+        function updateFloorInfo() {
+            if (!allMapData[currentFloor]) {
+                allMapData[currentFloor] = { grid: {} };
+            }
+            
+            allMapData[currentFloor].name = document.getElementById('floorName').value;
+            allMapData[currentFloor].difficulty = document.getElementById('floorDifficulty').value;
+            allMapData[currentFloor].investigation_type = document.getElementById('floorInvestigationType').value;
+            allMapData[currentFloor].entrance = document.getElementById('floorEntrance').value;
+            
+            showNotification('층 정보가 업데이트되었습니다 (저장 버튼을 눌러주세요)', 'success');
+        }
+
+        // 타일 업데이트
+        function updateTile() {
+            if (!selectedCoord) {
+                showNotification('타일을 먼저 선택하세요', 'error');
+                return;
+            }
+            
+            const type = document.getElementById('tileType').value;
+            const name = document.getElementById('tileName').value;
+            
+            if (!allMapData[currentFloor].grid) {
+                allMapData[currentFloor].grid = {};
+            }
+            
+            allMapData[currentFloor].grid[selectedCoord] = {
+                type: type,
+                name: name,
+                color: null
+            };
+            
+            renderGrid();
+            // 선택 유지
+            selectTile(selectedCoord, allMapData[currentFloor].grid[selectedCoord]);
+            
+            showNotification(`${selectedCoord} 타일 업데이트 완료`, 'success');
+        }
+
+        // 타일 타입 미리보기 업데이트
+        function updateTileTypePreview() {
+            const type = document.getElementById('tileType').value;
+            const nameInput = document.getElementById('tileName');
+            
+            // 기본 이름 제안
+            const defaultNames = {
+                'wall': '벽',
+                'corridor': '복도',
+                'room': '방',
+                'entrance': '입구'
+            };
+            
+            if (!nameInput.value || Object.values(defaultNames).includes(nameInput.value)) {
+                nameInput.value = defaultNames[type];
+            }
+        }
+
+        // 모든 변경사항 저장
+        async function saveAllChanges() {
+            if (!confirm('모든 변경사항을 저장하시겠습니까?')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/admin/save-map', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(allMapData)
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showNotification('맵 데이터가 저장되었습니다!', 'success');
+                } else {
+                    showNotification('저장 실패: ' + (data.error || '알 수 없는 오류'), 'error');
+                }
+            } catch (error) {
+                console.error('저장 실패:', error);
+                showNotification('저장 중 오류 발생', 'error');
+            }
+        }
+
+        // 맵 초기화
+        function resetMap() {
+            if (!confirm('정말로 현재 층의 맵을 초기화하시겠습니까? (모든 타일이 벽으로 설정됩니다)')) {
+                return;
+            }
+            
+            allMapData[currentFloor] = {
+                name: document.getElementById('floorName').value,
+                difficulty: document.getElementById('floorDifficulty').value,
+                investigation_type: document.getElementById('floorInvestigationType').value,
+                entrance: document.getElementById('floorEntrance').value,
+                grid: {}
+            };
+            
+            // 모든 타일을 벽으로 초기화
+            for (let row = 1; row <= 8; row++) {
+                for (let col of ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']) {
+                    const coord = `${currentFloor}-${col}${row}`;
+                    allMapData[currentFloor].grid[coord] = {
+                        type: 'wall',
+                        name: '벽',
+                        color: null
+                    };
+                }
+            }
+            
+            renderGrid();
+            showNotification('맵이 초기화되었습니다 (저장 버튼을 눌러주세요)', 'info');
+        }
+
+        // 알림 표시
+        function showNotification(message, type = 'info') {
+            const notification = document.createElement('div');
+            notification.className = `notification ${type}`;
+            notification.textContent = message;
+            
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                notification.remove();
+            }, 3000);
+        }
+    </script>
 </body>
 </html>
