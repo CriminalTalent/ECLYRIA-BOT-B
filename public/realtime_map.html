@@ -340,7 +340,7 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1> 클라리스 오르 실시간 맵</h1>
+            <h1>실시간 맵</h1>
         </div>
         
         <!-- 상태바 -->
@@ -412,23 +412,23 @@
             <div class="legend">
                 <div class="legend-item">
                     <div class="legend-box" style="background: #444;"></div>
-                    <span>■ 벽</span>
+                    <span>벽</span>
                 </div>
                 <div class="legend-item">
                     <div class="legend-box" style="background: #555;"></div>
-                    <span>- 복도</span>
+                    <span>복도</span>
                 </div>
                 <div class="legend-item">
                     <div class="legend-box" style="background: #3a5a3a; border-color: #6f6;"></div>
-                    <span>□ 방</span>
+                    <span>방</span>
                 </div>
                 <div class="legend-item">
                     <div class="legend-box" style="background: #3a4a6a; border-color: #4a9eff;"></div>
-                    <span>○ 입구</span>
+                    <span>입구</span>
                 </div>
                 <div class="legend-item">
                     <div class="legend-box" style="background: #ff6b6b;"></div>
-                    <span> 현재 위치</span>
+                    <span>현재 위치</span>
                 </div>
             </div>
         </div>
@@ -533,10 +533,10 @@
             document.getElementById('itemsCount').textContent = currentData.found_items;
             document.getElementById('enemiesCount').textContent = currentData.defeated_enemies;
             
-            // 참가자
+            // 참가자 목록 - @ 제거
             const participantsList = document.getElementById('participantsList');
             participantsList.innerHTML = currentData.participants
-                .map(p => `<li>@${p}</li>`)
+                .map(p => `<li>${p}</li>`)
                 .join('');
             
             // 전투 알림
@@ -544,7 +544,7 @@
             if (currentData.current_encounter) {
                 encounterAlert.style.display = 'block';
                 encounterAlert.innerHTML = `
-                     <strong>전투 중!</strong><br>
+                    <strong>전투 중!</strong><br>
                     ${currentData.current_encounter.full_name} (HP: ${currentData.current_encounter.hp})
                 `;
             } else {
@@ -619,11 +619,11 @@
                     cellName.textContent = cellData.name;
                     cell.appendChild(cellName);
                     
-                    // 현재 위치에 플레이어 아이콘
+                    // 현재 위치에 플레이어 아이콘 (이모지 대신 텍스트)
                     if (coord === currentData.position) {
                         const icon = document.createElement('span');
                         icon.className = 'player-icon';
-                        icon.textContent = '';
+                        icon.textContent = '●';
                         cell.appendChild(icon);
                     }
                     
@@ -652,7 +652,7 @@
             document.getElementById('mainContent').style.display = 'none';
             
             const errorDiv = document.getElementById('errorMessage');
-            errorDiv.textContent = ' ' + message;
+            errorDiv.textContent = message;
             errorDiv.style.display = 'block';
             
             updateConnectionStatus(false);
