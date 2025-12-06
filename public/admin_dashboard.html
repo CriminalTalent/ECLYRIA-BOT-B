@@ -5,548 +5,360 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>관리자 대시보드</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
+        * { margin:0; padding:0; box-sizing:border-box; }
+
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: #1a1a1a;
-            color: #fff;
-            overflow-x: hidden;
+            background:#1a1a1a;
+            color:#fff;
+            overflow-x:hidden;
         }
-        
-        .container {
-            max-width: 100%;
-            margin: 0 auto;
-        }
-        
+
+        .container { max-width:100%; margin:0 auto; }
+
         /* 헤더 */
         .header {
-            background: linear-gradient(135deg, #2a2a2a 0%, #1a1a1a 100%);
-            padding: 20px 30px;
-            border-bottom: 3px solid #ff6b6b;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-wrap: wrap;
-            gap: 20px;
+            background:linear-gradient(135deg,#2a2a2a 0%,#1a1a1a 100%);
+            padding:20px 30px;
+            border-bottom:3px solid #ff6b6b;
+            display:flex;
+            justify-content:space-between;
+            align-items:center;
+            flex-wrap:wrap;
+            gap:20px;
         }
-        
         .header h1 {
-            color: #ff6b6b;
-            text-shadow: 0 0 10px rgba(255, 107, 107, 0.5);
-            font-size: 28px;
+            color:#ff6b6b;
+            text-shadow:0 0 10px rgba(255,107,107,0.5);
+            font-size:26px;
         }
-        
-        .header-controls {
-            display: flex;
-            gap: 15px;
-            align-items: center;
-        }
-        
+        .header-controls { display:flex; gap:15px; align-items:center; }
+
         .status-badge {
-            padding: 8px 16px;
-            background: #6bcf7f;
-            color: #1a1a1a;
-            border-radius: 20px;
-            font-weight: bold;
-            display: flex;
-            align-items: center;
-            gap: 8px;
+            padding:8px 16px;
+            background:#6bcf7f;
+            color:#1a1a1a;
+            border-radius:20px;
+            font-weight:bold;
+            display:flex;
+            align-items:center;
+            gap:8px;
         }
-        
         .status-indicator {
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            background: #1a1a1a;
-            animation: pulse 2s infinite;
+            width:10px; height:10px; border-radius:50%;
+            background:#1a1a1a;
+            animation:pulse 2s infinite;
         }
-        
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.5} }
+
+        .header-select {
+            background:#2a2a2a;
+            color:#fff;
+            border:1px solid #555;
+            padding:6px 10px;
+            border-radius:5px;
         }
-        
+
+        .btn {
+            padding:8px 16px;
+            border:none;
+            border-radius:5px;
+            cursor:pointer;
+            font-weight:bold;
+            transition:all 0.3s;
+        }
+        .btn-primary { background:#4a9eff; color:#fff; }
+        .btn-primary:hover { background:#3a8eef; transform:translateY(-1px); }
+        .btn-secondary { background:#555; color:#fff; }
+        .btn-secondary:hover { background:#666; }
+
         /* 레이아웃 */
         .dashboard {
-            display: grid;
-            grid-template-columns: 300px 1fr 350px;
-            height: calc(100vh - 80px);
+            display:grid;
+            grid-template-columns:280px 1fr 350px;
+            height:calc(100vh - 80px);
         }
-        
+
         /* 사이드바 */
         .sidebar {
-            background: #2a2a2a;
-            border-right: 1px solid #333;
-            overflow-y: auto;
-            padding: 20px;
+            background:#2a2a2a;
+            border-right:1px solid #333;
+            overflow-y:auto;
+            padding:20px;
         }
-        
         .sidebar h2 {
-            color: #4a9eff;
-            margin-bottom: 15px;
-            font-size: 18px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
+            color:#4a9eff;
+            margin-bottom:10px;
+            font-size:17px;
         }
-        
-        .exploration-list {
-            list-style: none;
+        .sidebar label {
+            display:block;
+            font-size:12px;
+            color:#aaa;
+            margin-bottom:4px;
         }
-        
+
+        .exploration-list { list-style:none; }
         .exploration-item {
-            background: #333;
-            padding: 15px;
-            margin: 10px 0;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: all 0.3s;
-            border-left: 4px solid #4a9eff;
+            background:#333;
+            padding:12px;
+            margin:8px 0;
+            border-radius:8px;
+            cursor:pointer;
+            transition:all 0.3s;
+            border-left:4px solid #4a9eff;
         }
-        
-        .exploration-item:hover {
-            background: #3a3a3a;
-            transform: translateX(5px);
-        }
-        
+        .exploration-item:hover { background:#3a3a3a; transform:translateX(3px); }
         .exploration-item.active {
-            background: #3a4a6a;
-            border-left-color: #ff6b6b;
+            background:#3a4a6a;
+            border-left-color:#ff6b6b;
         }
-        
-        .exploration-item-title {
-            font-weight: bold;
-            color: #fff;
-            margin-bottom: 5px;
-        }
-        
-        .exploration-item-info {
-            font-size: 12px;
-            color: #aaa;
-        }
-        
+        .exploration-item-title { font-weight:bold; margin-bottom:4px; }
+        .exploration-item-info { font-size:12px; color:#aaa; }
         .exploration-item-participants {
-            margin-top: 8px;
-            display: flex;
-            flex-wrap: wrap;
-            gap: 5px;
+            margin-top:6px;
+            display:flex;
+            flex-wrap:wrap;
+            gap:4px;
         }
-        
         .participant-tag {
-            background: #4a9eff;
-            color: white;
-            padding: 3px 8px;
-            border-radius: 12px;
-            font-size: 11px;
+            background:#4a9eff;
+            color:#fff;
+            padding:2px 6px;
+            border-radius:10px;
+            font-size:11px;
         }
-        
-        /* 메인 영역 */
+
+        /* 메인 */
         .main-area {
-            background: #1a1a1a;
-            overflow-y: auto;
-            padding: 20px;
+            background:#1a1a1a;
+            overflow-y:auto;
+            padding:20px;
         }
-        
         .map-viewer {
-            background: #2a2a2a;
-            border-radius: 10px;
-            padding: 30px;
-            margin-bottom: 20px;
+            background:#2a2a2a;
+            border-radius:10px;
+            padding:25px;
+            margin-bottom:20px;
         }
-        
         .map-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
+            display:flex;
+            justify-content:space-between;
+            align-items:center;
+            margin-bottom:15px;
         }
-        
-        .map-title {
-            font-size: 24px;
-            color: #ff6b6b;
+        .map-title { font-size:22px; color:#ff6b6b; }
+        .map-sub { font-size:13px; color:#aaa; margin-top:4px; }
+
+        .map-controls { display:flex; gap:8px; align-items:center; }
+        .badge {
+            display:inline-block;
+            font-size:11px;
+            padding:3px 8px;
+            border-radius:12px;
+            background:#444;
+            color:#ccc;
         }
-        
-        .map-controls {
-            display: flex;
-            gap: 10px;
-        }
-        
-        .btn {
-            padding: 8px 16px;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            font-weight: bold;
-            transition: all 0.3s;
-        }
-        
-        .btn-primary {
-            background: #4a9eff;
-            color: white;
-        }
-        
-        .btn-primary:hover {
-            background: #3a8eef;
-            transform: translateY(-2px);
-        }
-        
-        .btn-danger {
-            background: #ff6b6b;
-            color: white;
-        }
-        
-        .btn-danger:hover {
-            background: #ff5252;
-        }
-        
-        .btn-secondary {
-            background: #555;
-            color: white;
-        }
-        
-        .btn-secondary:hover {
-            background: #666;
-        }
-        
-        /* 그리드 뷰어 */
+
+        /* 그리드 */
         .grid-viewer {
-            display: grid;
-            grid-template-columns: 40px repeat(8, 1fr);
-            grid-template-rows: 40px repeat(8, 1fr);
-            gap: 3px;
-            background: #1a1a1a;
-            padding: 15px;
-            border-radius: 8px;
-            margin: 20px auto;
-            max-width: 800px;
+            display:grid;
+            grid-template-columns:40px repeat(8,1fr);
+            grid-template-rows:40px repeat(8,1fr);
+            gap:3px;
+            background:#1a1a1a;
+            padding:15px;
+            border-radius:8px;
+            margin:15px auto;
+            max-width:800px;
         }
-        
         .grid-cell {
-            aspect-ratio: 1;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            border: 2px solid var(--cell-border-color, #333);
-            position: relative;
-            font-size: 11px;
-            padding: 5px;
-            transition: all 0.3s;
-            background: var(--cell-bg-color);
-            color: var(--cell-text-color);
+            aspect-ratio:1;
+            display:flex;
+            flex-direction:column;
+            align-items:center;
+            justify-content:center;
+            position:relative;
+            border:2px solid #333;
+            font-size:10px;
+            padding:3px;
+            cursor:pointer;
+            transition:all .2s;
         }
-        
+        .grid-cell:hover { transform:scale(1.03); }
+
         .header-cell {
-            background: #2a2a2a !important;
-            color: #888 !important;
-            font-weight: bold;
-            font-size: 14px;
-            border: none !important;
+            background:#2a2a2a !important;
+            color:#888 !important;
+            font-weight:bold;
+            font-size:13px;
+            border:none !important;
+            cursor:default;
         }
-        
+
         .cell-wall {
-            --cell-bg-color: var(--color-wall, #444);
-            --cell-text-color: #666;
-            --cell-border-color: #333;
+            background:#444;
+            color:#777;
         }
-        
         .cell-corridor {
-            --cell-bg-color: var(--color-corridor, #555);
-            --cell-text-color: #aaa;
-            --cell-border-color: #333;
+            background:#555;
+            color:#ccc;
         }
-        
         .cell-room {
-            --cell-bg-color: var(--color-room, #3a5a3a);
-            --cell-text-color: #9f9;
-            --cell-border-color: var(--color-room-border, #6f6);
+            background:#3a5a3a;
+            color:#9f9;
         }
-        
         .cell-entrance {
-            --cell-bg-color: var(--color-entrance, #3a4a6a);
-            --cell-text-color: #6bf;
-            --cell-border-color: var(--color-entrance-border, #4a9eff);
+            background:#3a4a6a;
+            color:#6bf;
+            border-color:#4a9eff;
         }
-        
-        .cell-player {
-            border: 3px solid var(--color-player, #ff6b6b) !important;
-            box-shadow: 0 0 20px var(--color-player-shadow, rgba(255, 107, 107, 0.6));
-            animation: playerPulse 1.5s infinite;
-            z-index: 10;
+        .cell-selected {
+            box-shadow:0 0 0 2px #ff6b6b;
         }
-        
-        @keyframes playerPulse {
-            0%, 100% {
-                transform: scale(1);
-            }
-            50% {
-                transform: scale(1.05);
-            }
-        }
-        
-        .player-icon {
-            position: absolute;
-            font-size: 20px;
-            animation: bounce 1s infinite;
-        }
-        
-        @keyframes bounce {
-            0%, 100% { transform: translateY(0); }
-            50% { transform: translateY(-5px); }
-        }
-        
+
         .coord-label {
-            font-size: 9px;
-            color: #666;
-            position: absolute;
-            top: 2px;
-            left: 3px;
+            position:absolute;
+            top:2px; left:3px;
+            font-size:9px; color:#666;
         }
-        
         .cell-name {
-            font-size: 10px;
-            text-align: center;
-            line-height: 1.2;
+            text-align:center;
+            line-height:1.2;
+            word-break:keep-all;
+            font-size:10px;
         }
-        
-        /* 멀티 플레이어 표시 */
+        .player-icon {
+            position:absolute;
+            font-size:16px;
+            bottom:3px; left:3px;
+        }
         .player-markers {
-            position: absolute;
-            bottom: 2px;
-            right: 2px;
-            display: flex;
-            gap: 2px;
+            position:absolute;
+            right:3px; bottom:3px;
+            display:flex;
+            gap:2px;
         }
-        
         .player-marker {
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            border: 2px solid white;
+            width:10px; height:10px;
+            border-radius:50%;
+            border:1px solid #fff;
         }
-        
+
+        .panel-section {
+            background:#333;
+            border-radius:8px;
+            padding:15px;
+            margin-bottom:15px;
+        }
+        .panel-section h3 {
+            color:#4a9eff;
+            font-size:15px;
+            margin-bottom:10px;
+        }
+
+        .stats-grid {
+            display:grid;
+            grid-template-columns:repeat(2,1fr);
+            gap:8px;
+        }
+        .stat-card {
+            background:#2a2a2a;
+            padding:10px;
+            border-radius:5px;
+            text-align:center;
+        }
+        .stat-value { font-size:22px; font-weight:bold; color:#4a9eff; }
+        .stat-label { font-size:11px; color:#aaa; margin-top:4px; }
+
+        .empty-state {
+            text-align:center;
+            padding:50px 10px;
+            color:#666;
+            font-size:14px;
+        }
+
         /* 우측 패널 */
         .right-panel {
-            background: #2a2a2a;
-            border-left: 1px solid #333;
-            overflow-y: auto;
-            padding: 20px;
+            background:#2a2a2a;
+            border-left:1px solid #333;
+            overflow-y:auto;
+            padding:20px;
         }
-        
-        .panel-section {
-            background: #333;
-            border-radius: 8px;
-            padding: 20px;
-            margin-bottom: 20px;
+
+        .field-row {
+            display:flex;
+            flex-direction:column;
+            gap:4px;
+            margin-bottom:10px;
         }
-        
-        .panel-section h3 {
-            color: #4a9eff;
-            margin-bottom: 15px;
-            font-size: 16px;
+        .field-row label {
+            font-size:12px;
+            color:#aaa;
         }
-        
-        /* 색상 설정 */
-        .color-settings {
-            display: grid;
-            gap: 15px;
+        .field-row input[type="text"],
+        .field-row select {
+            background:#2a2a2a;
+            color:#fff;
+            border:1px solid #555;
+            border-radius:5px;
+            padding:5px 8px;
+            font-size:13px;
         }
-        
-        .color-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
+        .field-row input[type="color"] {
+            width:40px; height:30px;
+            border:none;
+            border-radius:5px;
+            padding:0;
         }
-        
-        .color-item label {
-            font-size: 13px;
-            color: #aaa;
+
+        .two-cols {
+            display:grid;
+            grid-template-columns:1fr auto;
+            gap:8px;
+            align-items:center;
         }
-        
-        .color-input-wrapper {
-            display: flex;
-            gap: 8px;
-            align-items: center;
-        }
-        
-        input[type="color"] {
-            width: 40px;
-            height: 40px;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-        }
-        
-        input[type="text"].color-code {
-            width: 80px;
-            padding: 5px 8px;
-            background: #2a2a2a;
-            border: 1px solid #555;
-            color: #fff;
-            border-radius: 5px;
-            font-family: monospace;
-            font-size: 12px;
-        }
-        
-        /* 플레이어 목록 */
-        .player-list {
-            list-style: none;
-        }
-        
-        .player-item {
-            background: #2a2a2a;
-            padding: 12px;
-            margin: 8px 0;
-            border-radius: 5px;
-            border-left: 4px solid #4a9eff;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        
-        .player-info {
-            flex: 1;
-        }
-        
-        .player-name {
-            font-weight: bold;
-            margin-bottom: 3px;
-        }
-        
-        .player-location {
-            font-size: 12px;
-            color: #aaa;
-        }
-        
-        .player-color-indicator {
-            width: 24px;
-            height: 24px;
-            border-radius: 50%;
-            border: 2px solid white;
-        }
-        
-        /* 통계 */
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 10px;
-        }
-        
-        .stat-card {
-            background: #2a2a2a;
-            padding: 15px;
-            border-radius: 5px;
-            text-align: center;
-        }
-        
-        .stat-value {
-            font-size: 28px;
-            font-weight: bold;
-            color: #4a9eff;
-        }
-        
-        .stat-label {
-            font-size: 12px;
-            color: #aaa;
-            margin-top: 5px;
-        }
-        
-        /* 프리셋 */
-        .preset-buttons {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 10px;
-        }
-        
-        .preset-btn {
-            padding: 10px;
-            border: 2px solid #555;
-            border-radius: 5px;
-            background: #2a2a2a;
-            color: white;
-            cursor: pointer;
-            transition: all 0.3s;
-            font-size: 12px;
-        }
-        
-        .preset-btn:hover {
-            border-color: #4a9eff;
-            background: #333;
-        }
-        
-        .preset-btn.active {
-            border-color: #ff6b6b;
-            background: #3a2a2a;
-        }
-        
-        /* 로딩 */
+
         .loading-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0, 0, 0, 0.8);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 1000;
+            position:fixed;
+            top:0; left:0; right:0; bottom:0;
+            background:rgba(0,0,0,0.7);
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            z-index:999;
         }
-        
         .loading-spinner {
-            width: 50px;
-            height: 50px;
-            border: 5px solid #333;
-            border-top-color: #4a9eff;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
+            width:50px; height:50px;
+            border-radius:50%;
+            border:5px solid #333;
+            border-top-color:#4a9eff;
+            animation:spin 1s linear infinite;
         }
-        
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-        
-        .empty-state {
-            text-align: center;
-            padding: 60px 20px;
-            color: #666;
-        }
-        
-        .empty-state-icon {
-            font-size: 64px;
-            margin-bottom: 20px;
-        }
-        
-        /* 반응형 */
-        @media (max-width: 1400px) {
+        @keyframes spin { to { transform:rotate(360deg); } }
+
+        @media (max-width:1200px) {
             .dashboard {
-                grid-template-columns: 280px 1fr 320px;
+                grid-template-columns:1fr;
+                height:auto;
             }
-        }
-        
-        @media (max-width: 1200px) {
-            .dashboard {
-                grid-template-columns: 1fr;
-                height: auto;
-            }
-            
-            .sidebar, .right-panel {
-                border: none;
-                border-bottom: 1px solid #333;
+            .right-panel, .sidebar {
+                border:none;
+                border-bottom:1px solid #333;
             }
         }
     </style>
 </head>
 <body>
+<div class="container">
     <!-- 헤더 -->
     <div class="header">
         <h1>관리자 대시보드</h1>
         <div class="header-controls">
+            <div>
+                <label style="font-size:11px;color:#aaa;">층 선택</label>
+                <select id="floorSelect" class="header-select"></select>
+            </div>
             <div class="status-badge">
                 <div class="status-indicator"></div>
                 <span id="serverStatus">연결 중...</span>
@@ -554,37 +366,34 @@
             <button class="btn btn-secondary" onclick="refreshAll()">새로고침</button>
         </div>
     </div>
-    
-    <!-- 대시보드 -->
+
+    <!-- 레이아웃 -->
     <div class="dashboard">
         <!-- 좌측: 탐색 목록 -->
         <div class="sidebar">
             <h2>활성 탐색</h2>
+            <label>탐색 선택 시 해당 층 맵이 중앙에 표시됩니다.</label>
             <ul class="exploration-list" id="explorationList">
-                <li class="empty-state">
-                    <div class="empty-state-icon"></div>
-                    <div>진행 중인 탐색이 없습니다</div>
-                </li>
+                <li class="empty-state">진행 중인 탐색이 없습니다</li>
             </ul>
         </div>
-        
-        <!-- 중앙: 맵 뷰어 -->
+
+        <!-- 중앙: 맵 & 통계 -->
         <div class="main-area">
-            <div id="mapViewer" class="map-viewer" style="display: none;">
+            <div id="mapViewer" class="map-viewer" style="display:none;">
                 <div class="map-header">
                     <div>
                         <div class="map-title" id="mapTitle">맵 로딩 중...</div>
-                        <div style="color: #aaa; margin-top: 5px;" id="mapInfo">-</div>
+                        <div class="map-sub" id="mapInfo">-</div>
                     </div>
                     <div class="map-controls">
-                        <button class="btn btn-primary" onclick="exportMapImage()">스크린샷</button>
-                        <button class="btn btn-secondary" onclick="resetView()">초기화</button>
+                        <span class="badge" id="currentFloorBadge">층: -</span>
+                        <button class="btn btn-primary" onclick="saveCurrentMap()">맵 저장</button>
+                        <button class="btn btn-secondary" onclick="resetColors()">색상 초기화</button>
                     </div>
                 </div>
-                
                 <div id="gridViewer" class="grid-viewer"></div>
-                
-                <!-- 통계 -->
+
                 <div class="panel-section">
                     <h3>탐색 통계</h3>
                     <div class="stats-grid">
@@ -607,522 +416,437 @@
                     </div>
                 </div>
             </div>
-            
-            <div id="emptyMap" class="empty-state" style="padding: 100px 20px;">
-                <div class="empty-state-icon"></div>
-                <div>왼쪽에서 탐색을 선택하세요</div>
+
+            <div id="emptyMap" class="empty-state" style="padding:100px 20px;">
+                왼쪽에서 탐색을 선택하거나 상단의 층을 선택해 맵을 불러오세요.
             </div>
         </div>
-        
-        <!-- 우측: 설정 & 플레이어 -->
+
+        <!-- 우측: 셀 편집 & 참가자 -->
         <div class="right-panel">
-            <!-- 색상 테마 프리셋 -->
             <div class="panel-section">
-                <h3>색상 테마</h3>
-                <div class="preset-buttons">
-                    <button class="preset-btn active" onclick="applyPreset('default')">기본</button>
-                    <button class="preset-btn" onclick="applyPreset('dark')">다크</button>
-                    <button class="preset-btn" onclick="applyPreset('nature')">자연</button>
-                    <button class="preset-btn" onclick="applyPreset('neon')">네온</button>
-                    <button class="preset-btn" onclick="applyPreset('warm')">따뜻</button>
-                    <button class="preset-btn" onclick="applyPreset('cool')">차가움</button>
+                <h3>셀 속성 편집</h3>
+                <div class="field-row">
+                    <label>좌표</label>
+                    <div id="cellCoordLabel">선택된 셀이 없습니다</div>
                 </div>
-            </div>
-            
-            <!-- 색상 커스터마이징 -->
-            <div class="panel-section">
-                <h3>색상 설정</h3>
-                <div class="color-settings">
-                    <div class="color-item">
-                        <label>벽</label>
-                        <div class="color-input-wrapper">
-                            <input type="color" id="colorWall" value="#444444" onchange="updateColor('wall', this.value)">
-                            <input type="text" class="color-code" id="colorWallCode" value="#444444">
-                        </div>
-                    </div>
-                    <div class="color-item">
-                        <label>복도</label>
-                        <div class="color-input-wrapper">
-                            <input type="color" id="colorCorridor" value="#555555" onchange="updateColor('corridor', this.value)">
-                            <input type="text" class="color-code" id="colorCorridorCode" value="#555555">
-                        </div>
-                    </div>
-                    <div class="color-item">
-                        <label>방</label>
-                        <div class="color-input-wrapper">
-                            <input type="color" id="colorRoom" value="#3a5a3a" onchange="updateColor('room', this.value)">
-                            <input type="text" class="color-code" id="colorRoomCode" value="#3a5a3a">
-                        </div>
-                    </div>
-                    <div class="color-item">
-                        <label>입구</label>
-                        <div class="color-input-wrapper">
-                            <input type="color" id="colorEntrance" value="#3a4a6a" onchange="updateColor('entrance', this.value)">
-                            <input type="text" class="color-code" id="colorEntranceCode" value="#3a4a6a">
-                        </div>
-                    </div>
-                    <div class="color-item">
-                        <label>플레이어</label>
-                        <div class="color-input-wrapper">
-                            <input type="color" id="colorPlayer" value="#ff6b6b" onchange="updateColor('player', this.value)">
-                            <input type="text" class="color-code" id="colorPlayerCode" value="#ff6b6b">
-                        </div>
-                    </div>
+
+                <div class="field-row">
+                    <label>타입</label>
+                    <select id="cellType">
+                        <option value="wall">벽</option>
+                        <option value="corridor">복도</option>
+                        <option value="room">방</option>
+                        <option value="entrance">입구</option>
+                    </select>
                 </div>
-                <button class="btn btn-primary" onclick="saveColorSettings()" style="width: 100%; margin-top: 15px;">저장</button>
+
+                <div class="field-row">
+                    <label>이름 (방/공간명)</label>
+                    <input type="text" id="cellName" placeholder="예: 핵심인물실">
+                </div>
+
+                <div class="field-row two-cols">
+                    <div>
+                        <label>색상 (위험/분류용)</label>
+                        <input type="color" id="cellColor" value="#444444">
+                    </div>
+                    <button class="btn btn-primary" onclick="saveSelectedCell()">셀 저장</button>
+                </div>
+
+                <small style="color:#888;font-size:11px;">
+                    셀을 클릭하면 여기에서 값이 뜨고, 수정 후 [셀 저장]하면 맵에 바로 반영됩니다.<br>
+                    최종적으로는 상단의 [맵 저장] 버튼을 눌러 JSON으로 기록하세요.
+                </small>
             </div>
-            
-            <!-- 플레이어 목록 -->
+
             <div class="panel-section">
                 <h3>참가자</h3>
-                <ul class="player-list" id="playerList">
-                    <li style="text-align: center; color: #666; padding: 20px;">
-                        탐색을 선택하세요
-                    </li>
+                <ul id="playerList" style="list-style:none;">
+                    <li style="text-align:center;color:#666;padding:20px;">탐색을 선택하면 플레이어가 표시됩니다.</li>
                 </ul>
             </div>
         </div>
     </div>
-    
-    <!-- 로딩 오버레이 -->
-    <div id="loadingOverlay" class="loading-overlay" style="display: none;">
-        <div class="loading-spinner"></div>
-    </div>
-    
-    <script>
-        let currentExplorationId = null;
-        let currentExplorationData = null;
-        let currentMapData = null;
-        let allExplorations = [];
-        let updateInterval = null;
-        
-        // 플레이어 색상 팔레트
-        const playerColors = [
-            '#ff6b6b', '#4a9eff', '#6bcf7f', '#ffd93d',
-            '#c77dff', '#ff7eb9', '#7ee8fa', '#ffa94d'
-        ];
-        
-        // 색상 프리셋
-        const colorPresets = {
-            default: {
-                wall: '#444444',
-                corridor: '#555555',
-                room: '#3a5a3a',
-                entrance: '#3a4a6a',
-                player: '#ff6b6b'
-            },
-            dark: {
-                wall: '#222222',
-                corridor: '#333333',
-                room: '#2a3a2a',
-                entrance: '#2a3a4a',
-                player: '#ff5252'
-            },
-            nature: {
-                wall: '#4a3c2a',
-                corridor: '#5a4c3a',
-                room: '#3a6a3a',
-                entrance: '#3a5a6a',
-                player: '#ffd93d'
-            },
-            neon: {
-                wall: '#1a1a2e',
-                corridor: '#16213e',
-                room: '#0f3460',
-                entrance: '#533483',
-                player: '#00ffff'
-            },
-            warm: {
-                wall: '#5a3a2a',
-                corridor: '#6a4a3a',
-                room: '#7a5a3a',
-                entrance: '#6a5a4a',
-                player: '#ff9a56'
-            },
-            cool: {
-                wall: '#2a3a4a',
-                corridor: '#3a4a5a',
-                room: '#2a4a5a',
-                entrance: '#3a5a6a',
-                player: '#4ac8ff'
+</div>
+
+<!-- 로딩 오버레이 -->
+<div id="loadingOverlay" class="loading-overlay" style="display:none;">
+    <div class="loading-spinner"></div>
+</div>
+
+<script>
+    let currentFloor = null;
+    let currentMapData = null;
+    let allExplorations = [];
+    let currentExplorationId = null;
+    let currentExplorationData = null;
+    let selectedCoord = null;
+    let updateInterval = null;
+
+    const playerColors = [
+        '#ff6b6b','#4a9eff','#6bcf7f','#ffd93d',
+        '#c77dff','#ff7eb9','#7ee8fa','#ffa94d'
+    ];
+
+    // =========================
+    // 초기화
+    // =========================
+    async function init() {
+        await loadFloors();
+        await loadExplorations();
+        startAutoUpdate();
+    }
+
+    async function loadFloors() {
+        try {
+            const res = await fetch('/api/floors');
+            const data = await res.json();
+            if (!data.success) return;
+
+            const select = document.getElementById('floorSelect');
+            select.innerHTML = '';
+            data.floors.forEach((f, idx) => {
+                const opt = document.createElement('option');
+                opt.value = f.code;
+                opt.textContent = `${f.code} - ${f.name}`;
+                select.appendChild(opt);
+                if (idx === 0 && !currentFloor) currentFloor = f.code;
+            });
+
+            if (currentFloor) {
+                select.value = currentFloor;
+                await loadMap(currentFloor);
+                showMapViewer(true);
             }
-        };
-        
-        // 초기화
-        async function init() {
-            await loadExplorations();
-            startAutoUpdate();
-            loadSavedColorSettings();
+        } catch (e) {
+            console.error('loadFloors error', e);
         }
-        
-        // 탐색 목록 로드
-        async function loadExplorations() {
-            try {
-                const response = await fetch('/api/explorations');
-                const data = await response.json();
-                
-                if (data.success) {
-                    allExplorations = data.explorations;
-                    renderExplorationList();
-                    updateServerStatus(true);
-                }
-            } catch (error) {
-                console.error('Failed to load explorations:', error);
-                updateServerStatus(false);
-            }
-        }
-        
-        // 탐색 목록 렌더링
-        function renderExplorationList() {
-            const list = document.getElementById('explorationList');
-            
-            if (allExplorations.length === 0) {
-                list.innerHTML = `
-                    <li class="empty-state">
-                        <div class="empty-state-icon"></div>
-                        <div>진행 중인 탐색이 없습니다</div>
-                    </li>
-                `;
-                return;
-            }
-            
-            list.innerHTML = allExplorations.map(exp => `
-                <li class="exploration-item ${exp.id === currentExplorationId ? 'active' : ''}" 
-                    onclick="selectExploration('${exp.id}')">
-                    <div class="exploration-item-title">${exp.floor_name}</div>
-                    <div class="exploration-item-info">
-                        위치: ${exp.position}
-                    </div>
-                    <div class="exploration-item-participants">
-                        ${exp.participants.map(p => `<span class="participant-tag">@${p}</span>`).join('')}
-                    </div>
-                </li>
-            `).join('');
-        }
-        
-        // 탐색 선택
-        async function selectExploration(explorationId) {
-            currentExplorationId = explorationId;
-            
-            // UI 업데이트
-            document.getElementById('emptyMap').style.display = 'none';
-            document.getElementById('mapViewer').style.display = 'block';
-            
-            // 데이터 로드
-            await loadExplorationData();
-            await loadMapData();
-            
+    }
+
+    async function loadExplorations() {
+        try {
+            const res = await fetch('/api/explorations');
+            const data = await res.json();
+            if (!data.success) throw new Error('exploration load failed');
+            allExplorations = data.explorations || [];
             renderExplorationList();
+            updateServerStatus(true);
+        } catch (e) {
+            console.error(e);
+            updateServerStatus(false);
+        }
+    }
+
+    function renderExplorationList() {
+        const list = document.getElementById('explorationList');
+        if (!allExplorations.length) {
+            list.innerHTML = '<li class="empty-state">진행 중인 탐색이 없습니다</li>';
+            return;
+        }
+        list.innerHTML = allExplorations.map(exp => `
+            <li class="exploration-item ${exp.id === currentExplorationId ? 'active':''}"
+                onclick="selectExploration('${exp.id}')">
+                <div class="exploration-item-title">${exp.floor_name} (${exp.floor})</div>
+                <div class="exploration-item-info">
+                    위치: ${exp.position || '-'}
+                </div>
+                <div class="exploration-item-participants">
+                    ${exp.participants.map(p => `<span class="participant-tag">@${p}</span>`).join('')}
+                </div>
+            </li>
+        `).join('');
+    }
+
+    async function selectExploration(id) {
+        currentExplorationId = id;
+        await loadExplorationData();
+        if (currentExplorationData) {
+            currentFloor = currentExplorationData.floor;
+            document.getElementById('floorSelect').value = currentFloor;
+            await loadMap(currentFloor);
             renderMap();
             renderPlayerList();
             updateStats();
+            showMapViewer(true);
         }
-        
-        // 탐색 데이터 로드
-        async function loadExplorationData() {
-            try {
-                const response = await fetch(`/api/exploration/${currentExplorationId}`);
-                const data = await response.json();
-                
-                if (data.success) {
-                    currentExplorationData = data.exploration;
-                }
-            } catch (error) {
-                console.error('Failed to load exploration data:', error);
+        renderExplorationList();
+    }
+
+    async function loadExplorationData() {
+        if (!currentExplorationId) return;
+        try {
+            const res = await fetch(`/api/exploration/${currentExplorationId}`);
+            const data = await res.json();
+            if (data.success) {
+                currentExplorationData = data.exploration;
             }
+        } catch (e) {
+            console.error('loadExplorationData error', e);
         }
-        
-        // 맵 데이터 로드
-        async function loadMapData() {
-            if (!currentExplorationData) return;
-            
-            try {
-                const response = await fetch(`/api/map/${currentExplorationData.floor}`);
-                const data = await response.json();
-                
-                if (data.success) {
-                    currentMapData = data;
+    }
+
+    // =========================
+    // 맵 로드 / 렌더링
+    // =========================
+    async function loadMap(floor) {
+        try {
+            const res = await fetch(`/api/map/${floor}`);
+            const data = await res.json();
+            if (!data.success) throw new Error(data.error || 'map load failed');
+            currentMapData = data;
+            document.getElementById('mapTitle').textContent = data.name;
+            document.getElementById('mapInfo').textContent =
+                `난이도: ${data.difficulty} | 조사: ${data.investigation_type}`;
+            document.getElementById('currentFloorBadge').textContent = `층: ${data.floor}`;
+            renderMap();
+        } catch (e) {
+            console.error('loadMap error', e);
+        }
+    }
+
+    function renderMap() {
+        const grid = document.getElementById('gridViewer');
+        grid.innerHTML = '';
+        if (!currentMapData) return;
+
+        const cols = ['A','B','C','D','E','F','G','H'];
+
+        // 1행: 빈칸 + 열 헤더
+        const emptyHeader = document.createElement('div');
+        emptyHeader.className = 'grid-cell header-cell';
+        grid.appendChild(emptyHeader);
+        cols.forEach(col => {
+            const h = document.createElement('div');
+            h.className = 'grid-cell header-cell';
+            h.textContent = col;
+            grid.appendChild(h);
+        });
+
+        // 본체
+        for (let row=1; row<=8; row++) {
+            const rowHeader = document.createElement('div');
+            rowHeader.className = 'grid-cell header-cell';
+            rowHeader.textContent = row;
+            grid.appendChild(rowHeader);
+
+            cols.forEach(col => {
+                const coord = `${currentMapData.floor}-${col}${row}`;
+                const cellData = (currentMapData.grid || {})[coord] || { type:'wall', name:'', color:null };
+
+                const cell = document.createElement('div');
+                cell.className = `grid-cell cell-${cellData.type || 'wall'}`;
+                cell.dataset.coord = coord;
+                cell.onclick = () => onCellClick(coord);
+
+                if (cellData.color) {
+                    cell.style.background = cellData.color;
                 }
-            } catch (error) {
-                console.error('Failed to load map data:', error);
-            }
-        }
-        
-        // 맵 렌더링
-        function renderMap() {
-            if (!currentMapData || !currentExplorationData) return;
-            
-            document.getElementById('mapTitle').textContent = currentMapData.name;
-            document.getElementById('mapInfo').textContent = 
-                `난이도: ${currentMapData.difficulty} | 조사: ${currentMapData.investigation_type}`;
-            
-            const grid = document.getElementById('gridViewer');
-            grid.innerHTML = '';
-            
-            // 헤더
-            const emptyHeader = document.createElement('div');
-            emptyHeader.className = 'grid-cell header-cell';
-            grid.appendChild(emptyHeader);
-            
-            ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].forEach(col => {
-                const header = document.createElement('div');
-                header.className = 'grid-cell header-cell';
-                header.textContent = col;
-                grid.appendChild(header);
+
+                if (coord === selectedCoord) {
+                    cell.classList.add('cell-selected');
+                }
+
+                const coordLabel = document.createElement('span');
+                coordLabel.className = 'coord-label';
+                coordLabel.textContent = `${col}${row}`;
+                cell.appendChild(coordLabel);
+
+                if (cellData.name) {
+                    const name = document.createElement('span');
+                    name.className = 'cell-name';
+                    name.textContent = cellData.name;
+                    cell.appendChild(name);
+                }
+
+                const playersHere = getPlayersAtPosition(coord);
+                if (playersHere.length > 0) {
+                    const icon = document.createElement('span');
+                    icon.className = 'player-icon';
+                    icon.textContent = playersHere.length === 1 ? '●' : '◆';
+                    cell.appendChild(icon);
+
+                    if (playersHere.length > 1) {
+                        const markers = document.createElement('div');
+                        markers.className = 'player-markers';
+                        playersHere.forEach((p, idx) => {
+                            const m = document.createElement('div');
+                            m.className = 'player-marker';
+                            m.style.background = playerColors[idx % playerColors.length];
+                            markers.appendChild(m);
+                        });
+                        cell.appendChild(markers);
+                    }
+                }
+
+                grid.appendChild(cell);
             });
-            
-            // 그리드 셀
-            for (let row = 1; row <= 8; row++) {
-                const rowHeader = document.createElement('div');
-                rowHeader.className = 'grid-cell header-cell';
-                rowHeader.textContent = row;
-                grid.appendChild(rowHeader);
-                
-                ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].forEach(col => {
-                    const coord = `${currentExplorationData.floor}-${col}${row}`;
-                    const cellData = currentMapData.grid[coord];
-                    
-                    if (!cellData) return;
-                    
-                    const cell = document.createElement('div');
-                    cell.className = `grid-cell cell-${cellData.type}`;
-                    
-                    // 플레이어 위치 체크
-                    const playersHere = getPlayersAtPosition(coord);
-                    if (playersHere.length > 0) {
-                        cell.classList.add('cell-player');
-                    }
-                    
-                    const coordLabel = document.createElement('span');
-                    coordLabel.className = 'coord-label';
-                    coordLabel.textContent = `${col}${row}`;
-                    cell.appendChild(coordLabel);
-                    
-                    const cellName = document.createElement('span');
-                    cellName.className = 'cell-name';
-                    cellName.textContent = cellData.name;
-                    cell.appendChild(cellName);
-                    
-                    // 플레이어 아이콘
-                    if (playersHere.length > 0) {
-                        const icon = document.createElement('span');
-                        icon.className = 'player-icon';
-                        icon.textContent = playersHere.length === 1 ? '●' : '◆';
-                        cell.appendChild(icon);
-                        
-                        // 멀티 플레이어 마커
-                        if (playersHere.length > 1) {
-                            const markers = document.createElement('div');
-                            markers.className = 'player-markers';
-                            playersHere.forEach((player, idx) => {
-                                const marker = document.createElement('div');
-                                marker.className = 'player-marker';
-                                marker.style.background = getPlayerColor(player, idx);
-                                markers.appendChild(marker);
-                            });
-                            cell.appendChild(markers);
-                        }
-                    }
-                    
-                    grid.appendChild(cell);
-                });
+        }
+    }
+
+    function getPlayersAtPosition(coord) {
+        if (!currentExplorationData) return [];
+        const posMap = currentExplorationData.player_positions || {};
+        const result = [];
+        Object.entries(posMap).forEach(([acct, pos]) => {
+            if (pos === coord) result.push(acct);
+        });
+        // player_positions 미사용 구버전 호환 (대표 위치만 있는 경우)
+        if (!result.length && currentExplorationData.position === coord) {
+            return currentExplorationData.participants || [];
+        }
+        return result;
+    }
+
+    // =========================
+    // 셀 선택/저장
+    // =========================
+    function onCellClick(coord) {
+        selectedCoord = coord;
+        const cellData = (currentMapData.grid || {})[coord] || { type:'wall', name:'', color:null };
+
+        document.getElementById('cellCoordLabel').textContent = coord;
+        document.getElementById('cellType').value = cellData.type || 'wall';
+        document.getElementById('cellName').value = cellData.name || '';
+        document.getElementById('cellColor').value = cellData.color || '#444444';
+
+        renderMap(); // 선택 표시 갱신
+    }
+
+    function saveSelectedCell() {
+        if (!selectedCoord || !currentMapData) return;
+        currentMapData.grid = currentMapData.grid || {};
+
+        currentMapData.grid[selectedCoord] = {
+            type:  document.getElementById('cellType').value,
+            name:  document.getElementById('cellName').value,
+            color: document.getElementById('cellColor').value
+        };
+
+        renderMap();
+    }
+
+    async function saveCurrentMap() {
+        if (!currentMapData) return;
+        showLoading(true);
+        try {
+            const res = await fetch(`/api/map/${currentMapData.floor}`, {
+                method:'POST',
+                headers:{'Content-Type':'application/json'},
+                body: JSON.stringify(currentMapData)
+            });
+            const data = await res.json();
+            if (!data.success) alert('맵 저장 실패: ' + (data.error || '알 수 없는 오류'));
+            else alert('맵이 JSON 파일로 저장되었습니다.');
+        } catch (e) {
+            console.error(e);
+            alert('맵 저장 중 오류가 발생했습니다.');
+        }
+        showLoading(false);
+    }
+
+    function resetColors() {
+        if (!currentMapData) return;
+        Object.values(currentMapData.grid || {}).forEach(cell => {
+            if (cell.type === 'wall') {
+                cell.color = '#444444';
+            } else if (cell.type === 'corridor') {
+                cell.color = '#555555';
+            } else if (cell.type === 'room') {
+                cell.color = '#3a5a3a';
+            } else if (cell.type === 'entrance') {
+                cell.color = '#3a4a6a';
             }
+        });
+        renderMap();
+    }
+
+    // =========================
+    // 플레이어 / 통계 / 상태
+    // =========================
+    function renderPlayerList() {
+        const list = document.getElementById('playerList');
+        if (!currentExplorationData || !(currentExplorationData.participants || []).length) {
+            list.innerHTML = '<li style="text-align:center;color:#666;padding:20px;">참가자가 없습니다.</li>';
+            return;
         }
-        
-        // 해당 위치에 있는 플레이어 찾기
-        function getPlayersAtPosition(position) {
-            if (!currentExplorationData) return [];
-            
-            // 단일 탐색인 경우
-            if (currentExplorationData.position === position) {
-                return currentExplorationData.participants;
-            }
-            
-            // 협력 탐색의 경우 (향후 확장)
-            return [];
-        }
-        
-        // 플레이어 색상 가져오기
-        function getPlayerColor(playerName, index) {
-            return playerColors[index % playerColors.length];
-        }
-        
-        // 플레이어 목록 렌더링
-        function renderPlayerList() {
-            if (!currentExplorationData) return;
-            
-            const list = document.getElementById('playerList');
-            
-            list.innerHTML = currentExplorationData.participants.map((player, idx) => `
-                <li class="player-item">
-                    <div class="player-info">
-                        <div class="player-name">@${player}</div>
-                        <div class="player-location">${currentExplorationData.position}</div>
-                    </div>
-                    <div class="player-color-indicator" style="background: ${getPlayerColor(player, idx)}"></div>
-                </li>
-            `).join('');
-        }
-        
-        // 통계 업데이트
-        function updateStats() {
-            if (!currentExplorationData) return;
-            
-            document.getElementById('statClues').textContent = currentExplorationData.discovered_clues || 0;
-            document.getElementById('statItems').textContent = currentExplorationData.found_items || 0;
-            document.getElementById('statEnemies').textContent = currentExplorationData.defeated_enemies || 0;
-            document.getElementById('statPlayers').textContent = currentExplorationData.participants.length;
-        }
-        
-        // 서버 상태 업데이트
-        function updateServerStatus(online) {
-            const status = document.getElementById('serverStatus');
-            status.textContent = online ? '온라인' : '오프라인';
-        }
-        
-        // 자동 업데이트 시작
-        function startAutoUpdate() {
-            updateInterval = setInterval(async () => {
-                await loadExplorations();
-                
-                if (currentExplorationId) {
-                    await loadExplorationData();
-                    renderMap();
-                    renderPlayerList();
-                    updateStats();
-                }
-            }, 2000);
-        }
-        
-        // 전체 새로고침
-        async function refreshAll() {
-            showLoading(true);
+        const posMap = currentExplorationData.player_positions || {};
+        list.innerHTML = currentExplorationData.participants.map((p, idx) => `
+            <li style="background:#2a2a2a;padding:10px;margin:6px 0;border-radius:5px;
+                       border-left:4px solid #4a9eff;display:flex;justify-content:space-between;align-items:center;">
+                <div>
+                    <div style="font-weight:bold;">@${p}</div>
+                    <div style="font-size:11px;color:#aaa;">${posMap[p] || currentExplorationData.position || '-'}</div>
+                </div>
+                <div style="width:22px;height:22px;border-radius:50%;border:2px solid #fff;
+                            background:${playerColors[idx % playerColors.length]};"></div>
+            </li>
+        `).join('');
+    }
+
+    function updateStats() {
+        if (!currentExplorationData) return;
+        document.getElementById('statClues').textContent   = currentExplorationData.discovered_clues || 0;
+        document.getElementById('statItems').textContent   = currentExplorationData.found_items || 0;
+        document.getElementById('statEnemies').textContent = currentExplorationData.defeated_enemies || 0;
+        document.getElementById('statPlayers').textContent = (currentExplorationData.participants || []).length;
+    }
+
+    function updateServerStatus(online) {
+        const el = document.getElementById('serverStatus');
+        el.textContent = online ? '온라인' : '오프라인';
+    }
+
+    function showMapViewer(show) {
+        document.getElementById('mapViewer').style.display = show ? 'block' : 'none';
+        document.getElementById('emptyMap').style.display = show ? 'none' : 'block';
+    }
+
+    // =========================
+    // 자동 업데이트
+    // =========================
+    function startAutoUpdate() {
+        if (updateInterval) clearInterval(updateInterval);
+        updateInterval = setInterval(async () => {
             await loadExplorations();
-            
             if (currentExplorationId) {
                 await loadExplorationData();
-                await loadMapData();
                 renderMap();
                 renderPlayerList();
                 updateStats();
             }
-            
-            showLoading(false);
+        }, 2000);
+    }
+
+    async function refreshAll() {
+        showLoading(true);
+        await loadFloors();
+        await loadExplorations();
+        if (currentExplorationId) {
+            await loadExplorationData();
+            renderMap();
+            renderPlayerList();
+            updateStats();
         }
-        
-        // 로딩 표시
-        function showLoading(show) {
-            document.getElementById('loadingOverlay').style.display = show ? 'flex' : 'none';
-        }
-        
-        // 색상 프리셋 적용
-        function applyPreset(presetName) {
-            const preset = colorPresets[presetName];
-            
-            Object.keys(preset).forEach(key => {
-                updateColor(key, preset[key]);
-                document.getElementById(`color${key.charAt(0).toUpperCase() + key.slice(1)}`).value = preset[key];
-                document.getElementById(`color${key.charAt(0).toUpperCase() + key.slice(1)}Code`).value = preset[key];
-            });
-            
-            // 버튼 활성화 표시
-            document.querySelectorAll('.preset-btn').forEach(btn => {
-                btn.classList.remove('active');
-            });
-            event.target.classList.add('active');
-        }
-        
-        // 색상 업데이트
-        function updateColor(type, color) {
-            document.documentElement.style.setProperty(`--color-${type}`, color);
-            
-            if (type === 'room') {
-                document.documentElement.style.setProperty(`--color-room-border`, adjustBrightness(color, 40));
-            }
-            if (type === 'entrance') {
-                document.documentElement.style.setProperty(`--color-entrance-border`, adjustBrightness(color, 40));
-            }
-            if (type === 'player') {
-                document.documentElement.style.setProperty(`--color-player-shadow`, hexToRgba(color, 0.6));
-            }
-            
-            // 코드 입력 필드 동기화
-            const codeInput = document.getElementById(`color${type.charAt(0).toUpperCase() + type.slice(1)}Code`);
-            if (codeInput) {
-                codeInput.value = color;
-            }
-        }
-        
-        // 밝기 조절
-        function adjustBrightness(hex, percent) {
-            const num = parseInt(hex.replace('#', ''), 16);
-            const amt = Math.round(2.55 * percent);
-            const R = (num >> 16) + amt;
-            const G = (num >> 8 & 0x00FF) + amt;
-            const B = (num & 0x0000FF) + amt;
-            return '#' + (0x1000000 + (R < 255 ? R < 1 ? 0 : R : 255) * 0x10000 +
-                (G < 255 ? G < 1 ? 0 : G : 255) * 0x100 +
-                (B < 255 ? B < 1 ? 0 : B : 255))
-                .toString(16).slice(1);
-        }
-        
-        // Hex to RGBA
-        function hexToRgba(hex, alpha) {
-            const num = parseInt(hex.replace('#', ''), 16);
-            const r = num >> 16;
-            const g = num >> 8 & 0x00FF;
-            const b = num & 0x0000FF;
-            return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-        }
-        
-        // 색상 설정 저장
-        function saveColorSettings() {
-            const settings = {
-                wall: document.getElementById('colorWall').value,
-                corridor: document.getElementById('colorCorridor').value,
-                room: document.getElementById('colorRoom').value,
-                entrance: document.getElementById('colorEntrance').value,
-                player: document.getElementById('colorPlayer').value
-            };
-            
-            localStorage.setItem('clarisseMapColors', JSON.stringify(settings));
-            
-            // 알림
-            alert('색상 설정이 저장되었습니다!');
-        }
-        
-        // 저장된 색상 설정 로드
-        function loadSavedColorSettings() {
-            const saved = localStorage.getItem('clarisseMapColors');
-            if (saved) {
-                const settings = JSON.parse(saved);
-                Object.keys(settings).forEach(key => {
-                    updateColor(key, settings[key]);
-                    document.getElementById(`color${key.charAt(0).toUpperCase() + key.slice(1)}`).value = settings[key];
-                    document.getElementById(`color${key.charAt(0).toUpperCase() + key.slice(1)}Code`).value = settings[key];
-                });
-            }
-        }
-        
-        // 뷰 초기화
-        function resetView() {
-            applyPreset('default');
-        }
-        
-        // 스크린샷 (간단 구현)
-        function exportMapImage() {
-            alert('스크린샷 기능은 브라우저의 스크린샷 도구를 사용하세요!\n(Windows: Win+Shift+S, Mac: Cmd+Shift+4)');
-        }
-        
-        // 페이지 언로드 시 정리
-        window.addEventListener('beforeunload', () => {
-            if (updateInterval) {
-                clearInterval(updateInterval);
-            }
-        });
-        
-        // 초기화 실행
-        init();
-    </script>
+        showLoading(false);
+    }
+
+    function showLoading(show) {
+        document.getElementById('loadingOverlay').style.display = show ? 'flex' : 'none';
+    }
+
+    document.getElementById('floorSelect').addEventListener('change', async (e) => {
+        currentFloor = e.target.value;
+        await loadMap(currentFloor);
+        showMapViewer(true);
+    });
+
+    window.addEventListener('beforeunload', () => {
+        if (updateInterval) clearInterval(updateInterval);
+    });
+
+    // 시작
+    init();
+</script>
 </body>
 </html>
