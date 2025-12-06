@@ -4,15 +4,18 @@
 require_relative 'sheet_manager'
 
 class GoogleSheetsService
-  def initialize(sheet_id, credentials_path)
-    @sheet_manager = SheetManager.new(sheet_id, credentials_path)
+  def initialize(sheet_id = nil, credentials_path = nil)
+    if sheet_id && credentials_path && File.exist?(credentials_path)
+      @sheet_manager = SheetManager.new(sheet_id, credentials_path)
+      puts "[GoogleSheetsService] Google Sheets 연동 활성화"
+    else
+      @sheet_manager = nil
+      puts "[GoogleSheetsService] 테스트 모드"
+    end
   end
 
   # 탐색 데이터 가져오기
   def get_exploration_data(exploration_id)
-    # 조사상태 시트에서 활성 탐색 찾기
-    # (실제로는 CoordinateExplorationSystem의 메모리에 있지만,
-    #  Google Sheets에서 위치 정보를 가져올 수 있음)
     {
       exploration_id: exploration_id,
       participants: [],
@@ -26,6 +29,8 @@ class GoogleSheetsService
 
   # 플레이어 위치 가져오기 (조사상태 시트에서)
   def get_player_positions
+    return [] unless @sheet_manager
+    
     rows = @sheet_manager.read_values("조사상태!A:Z")
     return [] unless rows && rows.length > 1
 
@@ -35,8 +40,8 @@ class GoogleSheetsService
 
     positions = []
     rows.each_with_index do |row, idx|
-      next if idx == 0  # 헤더 스킵
-      next unless row[0] && row[location_col]  # ID와 위치가 있어야 함
+      next if idx == 0
+      next unless row[0] && row[location_col]
       
       positions << {
         user_id: row[0].gsub('@', ''),
@@ -53,7 +58,6 @@ class GoogleSheetsService
 
   # 전체 탐색 목록
   def get_all_explorations
-    # 메모리 기반이므로 CoordinateExplorationSystem에서 관리
     []
   end
 
