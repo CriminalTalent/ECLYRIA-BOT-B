@@ -1,5 +1,5 @@
 # map_server.rb
-# 클라리스 오르 실시간 맵 서버
+# 실시간 맵 서버
 
 require 'sinatra'
 require 'json'
@@ -182,7 +182,7 @@ get '/' do
     </head>
     <body>
         <div class="container">
-            <h1> 클라리스 오르 맵 서버</h1>
+            <h1> 맵 서버</h1>
             
             <div class="card">
                 <h2>서버 상태</h2>
@@ -253,7 +253,7 @@ end
 # 서버 시작 로그
 if __FILE__ == $0
   puts "=" * 50
-  puts "  클라리스 오르 맵 서버 시작"
+  puts " 맵 서버 시작"
   puts "=" * 50
   puts "포트: #{settings.port}"
   puts "바인드: #{settings.bind}"
