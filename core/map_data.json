@@ -1,12 +1,9 @@
 {
-  "B3": {
-    "name": "B3 연구구역",
-    "difficulty": "보통",
-    "investigation_type": "일반",
-    "entrance": "B3-D8",
-    "grid": {
-      "B3-A1": { "type": "wall", "name": "", "color": "#444444" },
-      "B3-A2": { "type": "room", "name": "사령문실", "color": "#553333" }
+  "floors": {
+    "B3": {
+      "name": "마법 도서관 / B3층",
+      "tiles": {},
+      "connections": []
     }
   }
 }
