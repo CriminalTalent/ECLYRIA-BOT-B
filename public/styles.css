@@ -9,7 +9,7 @@
 
 body {
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  background: linear-gradient(135deg, #a8e6cf 0%, #88d8b0 100%);
+  background: linear-gradient(135deg, #b8dfd8 0%, #73c2be 100%);
   color: #333;
   min-height: 100vh;
   padding: 20px;
@@ -39,7 +39,7 @@ header {
 
 h1 {
   font-size: 2.5em;
-  color: #5fb897;
+  color: #4a9b96;
   margin-bottom: 10px;
   text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
 }
@@ -62,9 +62,9 @@ h1 {
 
 .floor-btn {
   padding: 12px 30px;
-  border: 2px solid #5fb897;
+  border: 2px solid #4a9b96;
   background: white;
-  color: #5fb897;
+  color: #4a9b96;
   border-radius: 8px;
   cursor: pointer;
   font-size: 1em;
@@ -73,16 +73,16 @@ h1 {
 }
 
 .floor-btn:hover {
-  background: #a8e6cf;
+  background: #b8dfd8;
   color: white;
   transform: translateY(-2px);
-  box-shadow: 0 5px 15px rgba(95, 184, 151, 0.3);
+  box-shadow: 0 5px 15px rgba(74, 155, 150, 0.3);
 }
 
 .floor-btn.active {
-  background: #5fb897;
+  background: #4a9b96;
   color: white;
-  box-shadow: 0 5px 15px rgba(95, 184, 151, 0.4);
+  box-shadow: 0 5px 15px rgba(74, 155, 150, 0.4);
 }
 
 /* ==============================================
@@ -142,22 +142,22 @@ h1 {
 
 /* 타일 타입별 색상 */
 .tile.wall {
-  background: #6b7c93;
+  background: #6b7c8f;
   color: white;
 }
 
 .tile.corridor {
-  background: #f0f4f8;
+  background: #f5f9f8;
   color: #4a5568;
 }
 
 .tile.room {
-  background: #a8d5e2;
+  background: #9bc4c0;
   color: white;
 }
 
 .tile.entrance {
-  background: #88d8b0;
+  background: #73c2be;
   color: white;
   font-weight: bold;
   animation: pulse 2s infinite;
@@ -210,12 +210,12 @@ h1 {
   background: white;
   padding: 15px;
   border-radius: 8px;
-  border-left: 4px solid #5fb897;
+  border-left: 4px solid #4a9b96;
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
 }
 
 .player-card strong {
-  color: #5fb897;
+  color: #4a9b96;
   font-size: 1.1em;
   display: block;
   margin-bottom: 8px;
@@ -247,7 +247,7 @@ h1 {
 
 .status-label {
   font-weight: bold;
-  color: #5fb897;
+  color: #4a9b96;
 }
 
 .status-value {
@@ -275,7 +275,7 @@ h1 {
 }
 
 .control-panel h3 {
-  color: #5fb897;
+  color: #4a9b96;
   margin-bottom: 15px;
 }
 
@@ -305,7 +305,7 @@ h1 {
 .form-group select:focus,
 .form-group textarea:focus {
   outline: none;
-  border-color: #5fb897;
+  border-color: #4a9b96;
 }
 
 .btn {
@@ -320,23 +320,23 @@ h1 {
 }
 
 .btn-primary {
-  background: #5fb897;
+  background: #4a9b96;
   color: white;
 }
 
 .btn-primary:hover {
-  background: #4da383;
+  background: #3d8580;
   transform: translateY(-2px);
-  box-shadow: 0 5px 15px rgba(95, 184, 151, 0.4);
+  box-shadow: 0 5px 15px rgba(74, 155, 150, 0.4);
 }
 
 .btn-success {
-  background: #88d8b0;
+  background: #73c2be;
   color: white;
 }
 
 .btn-success:hover {
-  background: #6ec99a;
+  background: #5fb3ae;
 }
 
 .btn-danger {
@@ -371,7 +371,7 @@ h1 {
 }
 
 .tile-editor h3 {
-  color: #5fb897;
+  color: #4a9b96;
   margin-bottom: 20px;
 }
 
@@ -414,10 +414,10 @@ h1 {
   border: 1px solid #ddd;
 }
 
-.legend-box.wall { background: #6b7c93; }
-.legend-box.corridor { background: #f0f4f8; }
-.legend-box.room { background: #a8d5e2; }
-.legend-box.entrance { background: #88d8b0; }
+.legend-box.wall { background: #6b7c8f; }
+.legend-box.corridor { background: #f5f9f8; }
+.legend-box.room { background: #9bc4c0; }
+.legend-box.entrance { background: #73c2be; }
 
 /* ==============================================
    반응형
@@ -497,6 +497,6 @@ h1 {
   }
 }
 
-.notification.success { background: #88d8b0; }
+.notification.success { background: #73c2be; }
 .notification.error { background: #f7a4a4; }
-.notification.info { background: #a8d5e2; }
+.notification.info { background: #9bc4c0; }
