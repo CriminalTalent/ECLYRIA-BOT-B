@@ -7,7 +7,18 @@ set :bind, '0.0.0.0'
 set :port, 4567
 set :public_folder, File.dirname(__FILE__) + '/public'
 
-service = GoogleSheetsService.new
+# Google Sheets 서비스 초기화 (선택적)
+SHEET_ID = ENV['GOOGLE_SHEET_ID'] || '1pEnN88w4oX9eFyTZxXpk3wKr80l6iYtPfYBNE-k0dD8'
+CREDENTIALS_PATH = ENV['GOOGLE_CREDENTIALS_PATH'] || 'service_account_key.json'
+
+# credentials 파일이 있으면 Google Sheets 연동, 없으면 테스트 모드
+if File.exist?(CREDENTIALS_PATH)
+  service = GoogleSheetsService.new(SHEET_ID, CREDENTIALS_PATH)
+  puts "[맵 서버] Google Sheets 연동 활성화"
+else
+  service = GoogleSheetsService.new
+  puts "[맵 서버] 테스트 모드 - Google Sheets 비활성화"
+end
 
 before do
   headers 'Access-Control-Allow-Origin' => '*'
@@ -16,17 +27,38 @@ end
 # 위치 가져오기 (플레이어)
 get '/api/players' do
   content_type :json
-  { success: true, players: service.load_locations }.to_json
+  begin
+    players = service.get_player_positions
+    { success: true, players: players }.to_json
+  rescue => e
+    puts "[에러] /api/players: #{e.message}"
+    { success: true, players: [] }.to_json
+  end
 end
 
 # 타일 세부 조사 정보
 get '/api/tile/:name' do
   content_type :json
   name = params[:name]
-  details = service.load_explore_details.find { |e| e[:name] == name }
   
-  if details
-    { success: true, tile: details }.to_json
+  # map_data.json에서 타일 찾기
+  data = MapCache.load
+  found_tile = nil
+  
+  data.each do |floor_code, floor_data|
+    if floor_data["grid"]
+      floor_data["grid"].each do |coord, tile|
+        if tile["name"] == name
+          found_tile = tile.merge(coord: coord, floor: floor_code)
+          break
+        end
+      end
+    end
+    break if found_tile
+  end
+  
+  if found_tile
+    { success: true, tile: found_tile }.to_json
   else
     { success: false, error: "Tile '#{name}' not found" }.to_json
   end
