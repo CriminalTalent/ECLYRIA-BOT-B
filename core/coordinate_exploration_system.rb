@@ -102,30 +102,35 @@ module CoordinateExplorationSystem
       FLOOR_MAPS.map { |code, floor| { code: code, name: floor[:name] } }
     end
 
+    # 층 데이터 가져오기
+    def get_floor_data(floor_code)
+      FLOOR_MAPS[floor_code.to_s.upcase]
+    end
+
     # ==============================
     # 탐색 관리
     # ==============================
-    def start_exploration(floor_code:, participants:, difficulty: nil, investigation_type: nil)
-      floor_code = floor_code.to_s.upcase
-      floor = FLOOR_MAPS[floor_code]
-      raise "Unknown floor: #{floor_code}" unless floor
+    def create_exploration(floor:, participants:)
+      floor_code = floor.to_s.upcase
+      floor_data = FLOOR_MAPS[floor_code]
+      raise "Unknown floor: #{floor_code}" unless floor_data
 
       id = "explore_#{floor_code}_#{Time.now.to_i}_#{SecureRandom.hex(2)}"
 
       # 모든 참가자를 입구 위치에 초기화
       player_positions = {}
       participants.each do |p|
-        player_positions[p] = floor[:entrance]
+        player_positions[p] = floor_data[:entrance]
       end
 
       @explorations[id] = {
         exploration_id:     id,
         floor:              floor_code,
-        floor_name:         floor[:name],
-        position:           floor[:entrance],   # 대표 위치(마지막 이동자)
-        entrance:           floor[:entrance],   # 입구 좌표 저장
-        difficulty:         difficulty         || floor[:difficulty],
-        investigation_type: investigation_type || floor[:investigation_type],
+        floor_name:         floor_data[:name],
+        position:           floor_data[:entrance],   # 대표 위치(마지막 이동자)
+        entrance:           floor_data[:entrance],   # 입구 좌표 저장
+        difficulty:         floor_data[:difficulty],
+        investigation_type: floor_data[:investigation_type],
         participants:       participants || [],
         discovered_clues:   [],
         found_items:        [],
@@ -140,17 +145,18 @@ module CoordinateExplorationSystem
       @explorations[id]
     end
 
+    # 탐색 가져오기
     def get(exploration_id)
       @explorations[exploration_id]
     end
 
     # 플레이어 개별 위치 업데이트
-    def update_position(exploration_id, player_acct, coord)
+    def update_player_position(exploration_id, player_id, coord)
       exp = @explorations[exploration_id]
       return unless exp
 
       exp[:player_positions] ||= {}
-      exp[:player_positions][player_acct] = coord
+      exp[:player_positions][player_id] = coord
       exp[:position] = coord # 대표 위치를 마지막 이동자로 맞춤
       exp
     end
@@ -204,7 +210,7 @@ module CoordinateExplorationSystem
       (1..8).each do |row|
         cols.each do |col|
           coord = "#{floor_code}-#{col}#{row}"
-          grid[coord] = { type: 'wall', name: '', color: nil }
+          grid[coord] = { type: 'wall', name: '벽', color: nil }
         end
       end
       grid
