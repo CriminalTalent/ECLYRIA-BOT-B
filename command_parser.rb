@@ -5,6 +5,7 @@ require_relative 'commands/heal_command'
 require_relative 'commands/dm_investigation_command'
 require_relative 'commands/hp_command'
 require_relative 'commands/dungeon_command'
+require_relative 'commands/coordinate_exploration_command'  # ⭐ 신규 추가
 
 class CommandParser
   def initialize(mastodon_client, sheet_manager)
@@ -18,6 +19,7 @@ class CommandParser
     @dm_investigation_command = DMInvestigationCommand.new(mastodon_client, sheet_manager)
     @hp_command = HpCommand.new(mastodon_client, sheet_manager)
     @dungeon_command = DungeonCommand.new(mastodon_client, sheet_manager)
+    @coord_exploration = CoordinateExplorationCommand.new(mastodon_client, sheet_manager)  # ⭐ 신규 추가
   end
 
   def handle(status)
@@ -53,6 +55,35 @@ class CommandParser
     puts "[전투봇] 명령 수신: #{clean_text} (from @#{user_id})"
 
     case clean_text
+    # ============================
+    # 좌표 탐색 시스템 ⭐ 신규 추가
+    # ============================
+    when /\[좌표탐색\/(B[2-5])\]/i
+      floor = $1.upcase
+      @coord_exploration.start_exploration(user_id, floor, reply_status)
+
+    when /\[좌표협력\/(B[2-5])\/((?:@\S+\/)*@\S+)\]/i
+      floor = $1.upcase
+      participants_text = $2
+      participants = participants_text.split('/').map { |p| p.gsub('@', '').strip }.reject(&:empty?)
+      @coord_exploration.start_cooperative(user_id, floor, participants, reply_status)
+
+    when /\[좌표이동\/([A-H][1-8])\]/i
+      coord = $1.upcase
+      @coord_exploration.move_to(user_id, coord, reply_status)
+
+    when /\[좌표조사\]/i
+      @coord_exploration.investigate_current(user_id, reply_status)
+
+    when /\[좌표상태\]/i
+      @coord_exploration.show_status(user_id, reply_status)
+
+    when /\[좌표종료\]/i
+      @coord_exploration.end_exploration(user_id, reply_status)
+
+    when /\[좌표맵\]/i
+      @coord_exploration.show_map(user_id, reply_status)
+
     # ============================
     # 공동목표 및 레이드
     # ============================
