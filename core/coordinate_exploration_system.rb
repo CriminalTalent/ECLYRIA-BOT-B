@@ -45,7 +45,7 @@ module CoordinateExplorationSystem
           name:               floor[:name]               || "#{floor_code_str} 층",
           difficulty:         floor[:difficulty]         || '보통',
           investigation_type: floor[:investigation_type] || '일반',
-          entrance:           floor[:entrance]           || "#{floor_code_str}-A1",
+          entrance:           floor[:entrance]           || "#{floor_code_str}-D8",
           grid:               grid_hash
         }
       end
@@ -90,7 +90,7 @@ module CoordinateExplorationSystem
         name:               payload_sym[:name]               || FLOOR_MAPS.dig(floor_code, :name)               || "#{floor_code} 층",
         difficulty:         payload_sym[:difficulty]         || FLOOR_MAPS.dig(floor_code, :difficulty)         || '보통',
         investigation_type: payload_sym[:investigation_type] || FLOOR_MAPS.dig(floor_code, :investigation_type) || '일반',
-        entrance:           payload_sym[:entrance]           || FLOOR_MAPS.dig(floor_code, :entrance)           || "#{floor_code}-A1",
+        entrance:           payload_sym[:entrance]           || FLOOR_MAPS.dig(floor_code, :entrance)           || "#{floor_code}-D8",
         grid:               new_grid
       }
 
@@ -112,22 +112,29 @@ module CoordinateExplorationSystem
 
       id = "explore_#{floor_code}_#{Time.now.to_i}_#{SecureRandom.hex(2)}"
 
+      # 모든 참가자를 입구 위치에 초기화
+      player_positions = {}
+      participants.each do |p|
+        player_positions[p] = floor[:entrance]
+      end
+
       @explorations[id] = {
-        exploration_id:   id,
-        floor:            floor_code,
-        floor_name:       floor[:name],
-        position:         floor[:entrance],   # 대표 위치(마지막 이동자)
-        difficulty:       difficulty         || floor[:difficulty],
+        exploration_id:     id,
+        floor:              floor_code,
+        floor_name:         floor[:name],
+        position:           floor[:entrance],   # 대표 위치(마지막 이동자)
+        entrance:           floor[:entrance],   # 입구 좌표 저장
+        difficulty:         difficulty         || floor[:difficulty],
         investigation_type: investigation_type || floor[:investigation_type],
-        participants:     participants || [],
-        discovered_clues: [],
-        found_items:      [],
-        defeated_enemies: [],
-        current_encounter: nil,
+        participants:       participants || [],
+        discovered_clues:   [],
+        found_items:        [],
+        defeated_enemies:   [],
+        current_encounter:  nil,
         deep_investigation: nil,
-        active:           true,
-        created_at:       Time.now,
-        player_positions: {}                 # "acct" => "B3-C4"
+        active:             true,
+        created_at:         Time.now,
+        player_positions:   player_positions   # 모든 참가자 초기 위치
       }
 
       @explorations[id]
@@ -154,6 +161,18 @@ module CoordinateExplorationSystem
       return unless exp
       exp[:active] = false
       exp
+    end
+
+    # 활성 탐색 찾기 (플레이어 ID로)
+    def find_active_exploration(player_id)
+      @explorations.values.find do |exp|
+        exp[:participants].include?(player_id) && exp[:active]
+      end
+    end
+
+    # 탐색 ID로 삭제
+    def delete_exploration(exploration_id)
+      @explorations.delete(exploration_id)
     end
 
     private
