@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>실시간 맵</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1a1a1a;
+            color: #fff;
+            padding: 20px;
+            overflow-x: hidden;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        h1 {
+            color: #ff6b6b;
+            text-shadow: 0 0 10px rgba(255, 107, 107, 0.5);
+            margin-bottom: 10px;
+        }
+        
+        .status-bar {
+            background: #2a2a2a;
+            padding: 15px 20px;
+            border-radius: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .status-label {
+            color: #aaa;
+            font-size: 14px;
+        }
+        
+        .status-value {
+            color: #fff;
+            font-weight: bold;
+            font-size: 16px;
+        }
+        
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #6bcf7f;
+            animation: pulse 2s infinite;
+        }
+        
+        .status-indicator.offline {
+            background: #ff6b6b;
+            animation: none;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .map-container {
+            background: #2a2a2a;
+            padding: 30px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+        
+        .map-title {
+            font-size: 24px;
+            color: #ff6b6b;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .map-info {
+            color: #aaa;
+            margin-bottom: 20px;
+        }
+        
+        .grid-display {
+            display: grid;
+            grid-template-columns: 40px repeat(8, 70px);
+            grid-template-rows: 40px repeat(8, 70px);
+            gap: 3px;
+            background: #1a1a1a;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px auto;
+            width: fit-content;
+        }
+        
+        .grid-cell {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            border: 2px solid #333;
+            position: relative;
+            font-size: 11px;
+            padding: 5px;
+            transition: all 0.3s;
+        }
+        
+        .header-cell {
+            background: #2a2a2a;
+            color: #888;
+            font-weight: bold;
+            font-size: 14px;
+        }
+        
+        .cell-wall {
+            background: #444;
+            color: #666;
+        }
+        
+        .cell-corridor {
+            background: #555;
+            color: #aaa;
+        }
+        
+        .cell-room {
+            background: #3a5a3a;
+            color: #9f9;
+            border-color: #6f6;
+        }
+        
+        .cell-entrance {
+            background: #3a4a6a;
+            color: #6bf;
+            border-color: #4a9eff;
+        }
+        
+        .cell-current {
+            background: #ff6b6b !important;
+            border-color: #ff6b6b !important;
+            color: #fff !important;
+            animation: currentPulse 1.5s infinite;
+            box-shadow: 0 0 20px rgba(255, 107, 107, 0.6);
+            transform: scale(1.1);
+            z-index: 10;
+        }
+        
+        @keyframes currentPulse {
+            0%, 100% {
+                box-shadow: 0 0 20px rgba(255, 107, 107, 0.6);
+            }
+            50% {
+                box-shadow: 0 0 30px rgba(255, 107, 107, 0.9);
+            }
+        }
+        
+        .coord-label {
+            font-size: 9px;
+            color: #666;
+            position: absolute;
+            top: 2px;
+            left: 3px;
+        }
+        
+        .cell-name {
+            font-size: 10px;
+            text-align: center;
+            line-height: 1.2;
+            word-break: keep-all;
+        }
+        
+        .player-icon {
+            font-size: 20px;
+            position: absolute;
+            animation: bounce 1s infinite;
+        }
+        
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-5px); }
+        }
+        
+        .info-panel {
+            background: #333;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        
+        .info-panel h3 {
+            color: #4a9eff;
+            margin-bottom: 15px;
+        }
+        
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+        
+        .info-item {
+            background: #2a2a2a;
+            padding: 15px;
+            border-radius: 5px;
+            border-left: 4px solid #6bcf7f;
+        }
+        
+        .info-item-label {
+            color: #aaa;
+            font-size: 12px;
+            margin-bottom: 5px;
+        }
+        
+        .info-item-value {
+            color: #fff;
+            font-size: 18px;
+            font-weight: bold;
+        }
+        
+        .participants-list {
+            list-style: none;
+            padding: 0;
+        }
+        
+        .participants-list li {
+            background: #2a2a2a;
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 5px;
+            border-left: 3px solid #4a9eff;
+        }
+        
+        .legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            justify-content: center;
+            padding: 20px;
+            background: #333;
+            border-radius: 8px;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .legend-box {
+            width: 30px;
+            height: 30px;
+            border-radius: 4px;
+            border: 2px solid #444;
+        }
+        
+        .error-message {
+            background: #ff6b6b;
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+            margin: 20px 0;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #aaa;
+        }
+        
+        .loading::after {
+            content: '...';
+            animation: dots 1.5s infinite;
+        }
+        
+        @keyframes dots {
+            0%, 20% { content: '.'; }
+            40% { content: '..'; }
+            60%, 100% { content: '...'; }
+        }
+        
+        .encounter-alert {
+            background: #ff6b6b;
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            animation: alertPulse 2s infinite;
+        }
+        
+        @keyframes alertPulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.8; }
+        }
+        
+        .deep-investigation-badge {
+            background: #4a9eff;
+            color: white;
+            padding: 5px 10px;
+            border-radius: 15px;
+            font-size: 12px;
+            display: inline-block;
+            margin-left: 10px;
+        }
+        
+        @media (max-width: 768px) {
+            .grid-display {
+                grid-template-columns: 30px repeat(8, 50px);
+                grid-template-rows: 30px repeat(8, 50px);
+            }
+            
+            .grid-cell {
+                font-size: 9px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>실시간 맵</h1>
+        </div>
+        
+        <!-- 상태바 -->
+        <div class="status-bar">
+            <div class="status-item">
+                <div class="status-indicator" id="connectionStatus"></div>
+                <span class="status-label">연결:</span>
+                <span class="status-value" id="connectionText">연결 중...</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">마지막 업데이트:</span>
+                <span class="status-value" id="lastUpdate">-</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">탐색 ID:</span>
+                <span class="status-value" id="explorationId">-</span>
+            </div>
+        </div>
+        
+        <!-- 로딩/에러 메시지 -->
+        <div id="loadingMessage" class="loading">탐색 정보를 불러오는 중</div>
+        <div id="errorMessage" class="error-message" style="display: none;"></div>
+        
+        <!-- 전투 알림 -->
+        <div id="encounterAlert" class="encounter-alert" style="display: none;"></div>
+        
+        <!-- 메인 컨텐츠 -->
+        <div id="mainContent" style="display: none;">
+            <!-- 맵 컨테이너 -->
+            <div class="map-container">
+                <div class="map-title">
+                    <span id="floorTitle">-</span>
+                    <span id="deepInvestigationBadge" class="deep-investigation-badge" style="display: none;">심층 조사 중</span>
+                </div>
+                <div class="map-info" id="mapInfo">-</div>
+                <div id="gridDisplay" class="grid-display"></div>
+            </div>
+            
+            <!-- 정보 패널 -->
+            <div class="info-panel">
+                <h3>탐색 정보</h3>
+                <div class="info-grid">
+                    <div class="info-item">
+                        <div class="info-item-label">현재 위치</div>
+                        <div class="info-item-value" id="currentPosition">-</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-item-label">발견한 단서</div>
+                        <div class="info-item-value" id="cluesCount">0</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-item-label">획득한 아이템</div>
+                        <div class="info-item-value" id="itemsCount">0</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-item-label">처치한 적</div>
+                        <div class="info-item-value" id="enemiesCount">0</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 참가자 목록 -->
+            <div class="info-panel">
+                <h3>참가자</h3>
+                <ul class="participants-list" id="participantsList"></ul>
+            </div>
+            
+            <!-- 범례 -->
+            <div class="legend">
+                <div class="legend-item">
+                    <div class="legend-box" style="background: #444;"></div>
+                    <span>■ 벽</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-box" style="background: #555;"></div>
+                    <span>- 복도</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-box" style="background: #3a5a3a; border-color: #6f6;"></div>
+                    <span>□ 방</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-box" style="background: #3a4a6a; border-color: #4a9eff;"></div>
+                    <span>○ 입구</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-box" style="background: #ff6b6b;"></div>
+                    <span>현재 위치</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // URL에서 탐색 ID 가져오기
+        const urlParams = new URLSearchParams(window.location.search);
+        const explorationId = urlParams.get('id');
+        
+        let currentData = null;
+        let mapData = null;
+        let updateInterval = null;
+        
+        // 초기화
+        async function init() {
+            if (!explorationId) {
+                showError('탐색 ID가 없습니다. URL을 확인하세요.');
+                return;
+            }
+            
+            document.getElementById('explorationId').textContent = explorationId;
+            
+            // 첫 로드
+            await updateExploration();
+            
+            // 2초마다 업데이트
+            updateInterval = setInterval(updateExploration, 2000);
+        }
+        
+        // 탐색 정보 업데이트
+        async function updateExploration() {
+            try {
+                const response = await fetch(`/api/exploration/${explorationId}`);
+                
+                if (!response.ok) {
+                    throw new Error('탐색을 찾을 수 없습니다.');
+                }
+                
+                const data = await response.json();
+                
+                if (!data.success) {
+                    throw new Error(data.error || '탐색을 찾을 수 없습니다.');
+                }
+                
+                currentData = data.exploration;
+                
+                // 맵 데이터 로드 (처음 한 번만)
+                if (!mapData || mapData.floor !== currentData.floor) {
+                    await loadMapData(currentData.floor);
+                }
+                
+                // UI 업데이트
+                updateUI();
+                updateConnectionStatus(true);
+                
+                // 로딩 숨기기, 컨텐츠 표시
+                document.getElementById('loadingMessage').style.display = 'none';
+                document.getElementById('errorMessage').style.display = 'none';
+                document.getElementById('mainContent').style.display = 'block';
+                
+            } catch (error) {
+                console.error('Update error:', error);
+                updateConnectionStatus(false);
+                
+                if (!currentData) {
+                    showError(error.message);
+                }
+            }
+        }
+        
+        // 맵 데이터 로드
+        async function loadMapData(floor) {
+            try {
+                const response = await fetch(`/api/map/${floor}`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    mapData = data;
+                }
+            } catch (error) {
+                console.error('Map load error:', error);
+            }
+        }
+        
+        // UI 업데이트
+        function updateUI() {
+            if (!currentData || !mapData) return;
+            
+            // 제목
+            document.getElementById('floorTitle').textContent = currentData.floor_name;
+            document.getElementById('mapInfo').textContent = 
+                `난이도: ${currentData.difficulty} | 조사 유형: ${currentData.investigation_type}`;
+            
+            // 현재 위치
+            const coordOnly = currentData.position.split('-')[1];
+            document.getElementById('currentPosition').textContent = 
+                `${currentData.position} (${mapData.grid[currentData.position]?.name || '?'})`;
+            
+            // 통계
+            document.getElementById('cluesCount').textContent = currentData.discovered_clues;
+            document.getElementById('itemsCount').textContent = currentData.found_items;
+            document.getElementById('enemiesCount').textContent = currentData.defeated_enemies;
+            
+            // 참가자
+            const participantsList = document.getElementById('participantsList');
+            participantsList.innerHTML = currentData.participants
+                .map(p => `<li>@${p}</li>`)
+                .join('');
+            
+            // 전투 알림
+            const encounterAlert = document.getElementById('encounterAlert');
+            if (currentData.current_encounter) {
+                encounterAlert.style.display = 'block';
+                encounterAlert.innerHTML = `
+                    <strong>전투 중!</strong><br>
+                    ${currentData.current_encounter.full_name} (HP: ${currentData.current_encounter.hp})
+                `;
+            } else {
+                encounterAlert.style.display = 'none';
+            }
+            
+            // 심층 조사 배지
+            const deepBadge = document.getElementById('deepInvestigationBadge');
+            if (currentData.deep_investigation) {
+                deepBadge.style.display = 'inline-block';
+                deepBadge.textContent = `심층 조사 중: ${currentData.deep_investigation.location}`;
+            } else {
+                deepBadge.style.display = 'none';
+            }
+            
+            // 그리드 렌더링
+            renderGrid();
+            
+            // 마지막 업데이트 시간
+            const now = new Date();
+            document.getElementById('lastUpdate').textContent = 
+                now.toLocaleTimeString('ko-KR');
+        }
+        
+        // 그리드 렌더링
+        function renderGrid() {
+            const grid = document.getElementById('gridDisplay');
+            grid.innerHTML = '';
+            
+            if (!mapData) return;
+            
+            // 헤더
+            const emptyHeader = document.createElement('div');
+            emptyHeader.className = 'grid-cell header-cell';
+            grid.appendChild(emptyHeader);
+            
+            ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].forEach(col => {
+                const header = document.createElement('div');
+                header.className = 'grid-cell header-cell';
+                header.textContent = col;
+                grid.appendChild(header);
+            });
+            
+            // 그리드 셀
+            for (let row = 1; row <= 8; row++) {
+                const rowHeader = document.createElement('div');
+                rowHeader.className = 'grid-cell header-cell';
+                rowHeader.textContent = row;
+                grid.appendChild(rowHeader);
+                
+                ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].forEach(col => {
+                    const coord = `${currentData.floor}-${col}${row}`;
+                    const cellData = mapData.grid[coord];
+                    
+                    if (!cellData) return;
+                    
+                    const cell = document.createElement('div');
+                    cell.className = `grid-cell cell-${cellData.type}`;
+                    
+                    // 현재 위치 하이라이트
+                    if (coord === currentData.position) {
+                        cell.classList.add('cell-current');
+                    }
+                    
+                    const coordLabel = document.createElement('span');
+                    coordLabel.className = 'coord-label';
+                    coordLabel.textContent = `${col}${row}`;
+                    cell.appendChild(coordLabel);
+                    
+                    const cellName = document.createElement('span');
+                    cellName.className = 'cell-name';
+                    cellName.textContent = cellData.name;
+                    cell.appendChild(cellName);
+                    
+                    // 현재 위치에 플레이어 아이콘
+                    if (coord === currentData.position) {
+                        const icon = document.createElement('span');
+                        icon.className = 'player-icon';
+                        icon.textContent = '*';
+                        cell.appendChild(icon);
+                    }
+                    
+                    grid.appendChild(cell);
+                });
+            }
+        }
+        
+        // 연결 상태 업데이트
+        function updateConnectionStatus(connected) {
+            const indicator = document.getElementById('connectionStatus');
+            const text = document.getElementById('connectionText');
+            
+            if (connected) {
+                indicator.classList.remove('offline');
+                text.textContent = '온라인';
+            } else {
+                indicator.classList.add('offline');
+                text.textContent = '오프라인';
+            }
+        }
+        
+        // 에러 표시
+        function showError(message) {
+            document.getElementById('loadingMessage').style.display = 'none';
+            document.getElementById('mainContent').style.display = 'none';
+            
+            const errorDiv = document.getElementById('errorMessage');
+            errorDiv.textContent = '❌ ' + message;
+            errorDiv.style.display = 'block';
+            
+            updateConnectionStatus(false);
+        }
+        
+        // 페이지 언로드 시 인터벌 정리
+        window.addEventListener('beforeunload', () => {
+            if (updateInterval) {
+                clearInterval(updateInterval);
+            }
+        });
+        
+        // 초기화 실행
+        init();
+    </script>
+</body>
+</html>
