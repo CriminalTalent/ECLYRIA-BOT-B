@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>클라리스 오르 던전 관리자</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1a1a1a;
+            color: #fff;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+        
+        h1 {
+            text-align: center;
+            color: #ff6b6b;
+            margin-bottom: 30px;
+            text-shadow: 0 0 10px rgba(255, 107, 107, 0.5);
+        }
+        
+        .controls {
+            background: #2a2a2a;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 30px;
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        label {
+            color: #aaa;
+            font-weight: bold;
+        }
+        
+        select, input {
+            padding: 8px 12px;
+            background: #333;
+            border: 1px solid #555;
+            color: #fff;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        
+        button {
+            padding: 8px 16px;
+            background: #ff6b6b;
+            border: none;
+            color: white;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s;
+        }
+        
+        button:hover {
+            background: #ff5252;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(255, 107, 107, 0.3);
+        }
+        
+        button.secondary {
+            background: #4a9eff;
+        }
+        
+        button.secondary:hover {
+            background: #3a8eef;
+        }
+        
+        .map-container {
+            background: #2a2a2a;
+            padding: 30px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .map-title {
+            font-size: 24px;
+            color: #ff6b6b;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .map-info {
+            font-size: 14px;
+            color: #aaa;
+        }
+        
+        .grid-editor {
+            display: grid;
+            grid-template-columns: 40px repeat(8, 70px);
+            grid-template-rows: 40px repeat(8, 70px);
+            gap: 3px;
+            background: #1a1a1a;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        
+        .grid-cell {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            border: 2px solid #333;
+            cursor: pointer;
+            transition: all 0.2s;
+            position: relative;
+            font-size: 11px;
+            padding: 5px;
+        }
+        
+        .grid-cell:hover:not(.header-cell) {
+            border-color: #ff6b6b;
+            transform: scale(1.05);
+        }
+        
+        .grid-cell.selected {
+            border-color: #4a9eff;
+            box-shadow: 0 0 10px rgba(74, 158, 255, 0.5);
+        }
+        
+        .header-cell {
+            background: #2a2a2a;
+            color: #888;
+            font-weight: bold;
+            cursor: default;
+            font-size: 14px;
+        }
+        
+        .cell-wall {
+            background: #444;
+            color: #666;
+        }
+        
+        .cell-corridor {
+            background: #555;
+            color: #aaa;
+        }
+        
+        .cell-room {
+            background: #3a5a3a;
+            color: #9f9;
+            border-color: #6f6;
+        }
+        
+        .cell-entrance {
+            background: #3a4a6a;
+            color: #6bf;
+            border-color: #4a9eff;
+        }
+        
+        .coord-label {
+            font-size: 9px;
+            color: #666;
+            position: absolute;
+            top: 2px;
+            left: 3px;
+        }
+        
+        .cell-name {
+            font-size: 10px;
+            text-align: center;
+            line-height: 1.2;
+            word-break: keep-all;
+        }
+        
+        .edit-panel {
+            background: #333;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        
+        .edit-panel h3 {
+            color: #4a9eff;
+            margin-bottom: 15px;
+        }
+        
+        .edit-form {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+        
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        
+        .form-group label {
+            font-size: 12px;
+        }
+        
+        .form-group input[type="text"] {
+            width: 100%;
+        }
+        
+        .form-group input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+        }
+        
+        .legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            justify-content: center;
+            padding: 20px;
+            background: #333;
+            border-radius: 8px;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .legend-box {
+            width: 30px;
+            height: 30px;
+            border-radius: 4px;
+            border: 2px solid #444;
+        }
+        
+        .export-section {
+            background: #2a2a2a;
+            padding: 20px;
+            border-radius: 10px;
+            margin-top: 30px;
+        }
+        
+        .export-section h2 {
+            color: #4a9eff;
+            margin-bottom: 15px;
+        }
+        
+        textarea {
+            width: 100%;
+            min-height: 200px;
+            background: #1a1a1a;
+            border: 1px solid #555;
+            color: #9f9;
+            padding: 15px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            border-radius: 5px;
+            resize: vertical;
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 15px 20px;
+            background: #4a9eff;
+            color: white;
+            border-radius: 5px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            opacity: 0;
+            transform: translateY(-20px);
+            transition: all 0.3s;
+            pointer-events: none;
+            z-index: 1000;
+        }
+        
+        .notification.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        
+        .notification.success {
+            background: #6bcf7f;
+        }
+        
+        .notification.error {
+            background: #ff6b6b;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🗺️ 클라리스 오르 던전 관리자</h1>
+        
+        <!-- 컨트롤 패널 -->
+        <div class="controls">
+            <div class="control-group">
+                <label for="floorSelect">층 선택:</label>
+                <select id="floorSelect">
+                    <option value="B2">B2 - 지하 2층 (초급)</option>
+                    <option value="B3">B3 - 지하 3층 (중급)</option>
+                    <option value="B4">B4 - 지하 4층 (고급)</option>
+                    <option value="B5">B5 - 지하 5층 (최상급)</option>
+                </select>
+            </div>
+            
+            <div class="control-group">
+                <label for="cellTypeSelect">셀 타입:</label>
+                <select id="cellTypeSelect">
+                    <option value="wall">벽 (■)</option>
+                    <option value="corridor">복도 (-)</option>
+                    <option value="room">방 (□)</option>
+                    <option value="entrance">입구 (○)</option>
+                </select>
+            </div>
+            
+            <div class="control-group">
+                <button onclick="applyToSelected()">선택한 셀에 적용</button>
+                <button class="secondary" onclick="clearSelection()">선택 해제</button>
+            </div>
+        </div>
+        
+        <!-- 맵 에디터 -->
+        <div class="map-container">
+            <div class="map-title">
+                <span id="mapTitle">지하 2층</span>
+                <div class="map-info">
+                    <span id="mapInfo">난이도: 1 | 조사: 조사</span>
+                </div>
+            </div>
+            
+            <div id="gridEditor" class="grid-editor"></div>
+            
+            <!-- 셀 편집 패널 -->
+            <div class="edit-panel" id="editPanel" style="display: none;">
+                <h3>셀 정보 편집: <span id="editCellCoord"></span></h3>
+                <div class="edit-form">
+                    <div class="form-group">
+                        <label>타입:</label>
+                        <select id="editType">
+                            <option value="wall">벽</option>
+                            <option value="corridor">복도</option>
+                            <option value="room">방</option>
+                            <option value="entrance">입구</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>이름:</label>
+                        <input type="text" id="editName" placeholder="예: 창고, 회의실">
+                    </div>
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="editInvestigatable">
+                            조사 가능
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <button onclick="saveCell()">저장</button>
+                        <button class="secondary" onclick="closeEditPanel()">취소</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 범례 -->
+        <div class="legend">
+            <div class="legend-item">
+                <div class="legend-box" style="background: #444;"></div>
+                <span>■ 벽</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-box" style="background: #555;"></div>
+                <span>- 복도</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-box" style="background: #3a5a3a; border-color: #6f6;"></div>
+                <span>□ 방 (조사 가능)</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-box" style="background: #3a4a6a; border-color: #4a9eff;"></div>
+                <span>○ 입구</span>
+            </div>
+        </div>
+        
+        <!-- 내보내기/불러오기 -->
+        <div class="export-section">
+            <h2>Ruby 코드 내보내기</h2>
+            <textarea id="exportCode" readonly></textarea>
+            <div class="button-group">
+                <button onclick="generateRubyCode()">Ruby 코드 생성</button>
+                <button class="secondary" onclick="copyToClipboard()">클립보드에 복사</button>
+                <button class="secondary" onclick="downloadRubyFile()">Ruby 파일 다운로드</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 알림 -->
+    <div id="notification" class="notification"></div>
+    
+    <script>
+        // 맵 데이터 구조
+        const floorData = {
+            B2: {
+                name: '지하 2층',
+                difficulty: 1,
+                investigation_type: '조사',
+                entrance: 'B2-F7',
+                grid: {}
+            },
+            B3: {
+                name: '지하 3층',
+                difficulty: 2,
+                investigation_type: '정밀조사',
+                entrance: 'B3-F7',
+                grid: {}
+            },
+            B4: {
+                name: '지하 4층',
+                difficulty: 3,
+                investigation_type: '감지',
+                entrance: 'B4-F7',
+                grid: {}
+            },
+            B5: {
+                name: '지하 5층',
+                difficulty: 4,
+                investigation_type: '훔쳐보기',
+                entrance: 'B5-F7',
+                grid: {}
+            }
+        };
+        
+        let currentFloor = 'B2';
+        let selectedCells = new Set();
+        let currentEditCell = null;
+        
+        // 초기화
+        function init() {
+            initializeDefaultMaps();
+            renderGrid();
+            document.getElementById('floorSelect').addEventListener('change', (e) => {
+                currentFloor = e.target.value;
+                clearSelection();
+                renderGrid();
+            });
+        }
+        
+        // 기본 맵 초기화
+        function initializeDefaultMaps() {
+            const cols = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
+            const rows = [1, 2, 3, 4, 5, 6, 7, 8];
+            
+            Object.keys(floorData).forEach(floor => {
+                cols.forEach(col => {
+                    rows.forEach(row => {
+                        const coord = `${floor}-${col}${row}`;
+                        floorData[floor].grid[coord] = {
+                            type: 'corridor',
+                            name: '복도',
+                            investigatable: false
+                        };
+                    });
+                });
+                
+                // 기본 벽 설정 (테두리)
+                cols.forEach(col => {
+                    floorData[floor].grid[`${floor}-${col}1`].type = 'wall';
+                    floorData[floor].grid[`${floor}-${col}1`].name = '벽';
+                    floorData[floor].grid[`${floor}-${col}8`].type = 'wall';
+                    floorData[floor].grid[`${floor}-${col}8`].name = '벽';
+                });
+                rows.forEach(row => {
+                    floorData[floor].grid[`${floor}-A${row}`].type = 'wall';
+                    floorData[floor].grid[`${floor}-A${row}`].name = '벽';
+                    floorData[floor].grid[`${floor}-H${row}`].type = 'wall';
+                    floorData[floor].grid[`${floor}-H${row}`].name = '벽';
+                });
+                
+                // 기본 입구
+                floorData[floor].grid[`${floor}-F7`].type = 'entrance';
+                floorData[floor].grid[`${floor}-F7`].name = '입구';
+            });
+        }
+        
+        // 그리드 렌더링
+        function renderGrid() {
+            const grid = document.getElementById('gridEditor');
+            grid.innerHTML = '';
+            
+            const floor = floorData[currentFloor];
+            document.getElementById('mapTitle').textContent = floor.name;
+            document.getElementById('mapInfo').textContent = 
+                `난이도: ${floor.difficulty} | 조사: ${floor.investigation_type}`;
+            
+            // 헤더
+            const emptyHeader = document.createElement('div');
+            emptyHeader.className = 'grid-cell header-cell';
+            grid.appendChild(emptyHeader);
+            
+            ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].forEach(col => {
+                const header = document.createElement('div');
+                header.className = 'grid-cell header-cell';
+                header.textContent = col;
+                grid.appendChild(header);
+            });
+            
+            // 그리드 셀
+            for (let row = 1; row <= 8; row++) {
+                const rowHeader = document.createElement('div');
+                rowHeader.className = 'grid-cell header-cell';
+                rowHeader.textContent = row;
+                grid.appendChild(rowHeader);
+                
+                ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].forEach(col => {
+                    const coord = `${currentFloor}-${col}${row}`;
+                    const cellData = floor.grid[coord];
+                    
+                    const cell = document.createElement('div');
+                    cell.className = `grid-cell cell-${cellData.type}`;
+                    cell.dataset.coord = coord;
+                    
+                    if (selectedCells.has(coord)) {
+                        cell.classList.add('selected');
+                    }
+                    
+                    const coordLabel = document.createElement('span');
+                    coordLabel.className = 'coord-label';
+                    coordLabel.textContent = `${col}${row}`;
+                    cell.appendChild(coordLabel);
+                    
+                    const cellName = document.createElement('span');
+                    cellName.className = 'cell-name';
+                    cellName.textContent = cellData.name;
+                    cell.appendChild(cellName);
+                    
+                    cell.addEventListener('click', (e) => {
+                        if (e.shiftKey) {
+                            toggleSelection(coord);
+                        } else {
+                            openEditPanel(coord);
+                        }
+                    });
+                    
+                    grid.appendChild(cell);
+                });
+            }
+        }
+        
+        // 선택 토글
+        function toggleSelection(coord) {
+            if (selectedCells.has(coord)) {
+                selectedCells.delete(coord);
+            } else {
+                selectedCells.add(coord);
+            }
+            renderGrid();
+        }
+        
+        // 선택 해제
+        function clearSelection() {
+            selectedCells.clear();
+            renderGrid();
+        }
+        
+        // 선택한 셀에 적용
+        function applyToSelected() {
+            if (selectedCells.size === 0) {
+                showNotification('셀을 선택하세요 (Shift+클릭)', 'error');
+                return;
+            }
+            
+            const cellType = document.getElementById('cellTypeSelect').value;
+            const typeNames = {
+                wall: '벽',
+                corridor: '복도',
+                room: '방',
+                entrance: '입구'
+            };
+            
+            selectedCells.forEach(coord => {
+                floorData[currentFloor].grid[coord].type = cellType;
+                floorData[currentFloor].grid[coord].name = typeNames[cellType];
+                if (cellType === 'room') {
+                    floorData[currentFloor].grid[coord].investigatable = true;
+                } else {
+                    floorData[currentFloor].grid[coord].investigatable = false;
+                }
+            });
+            
+            showNotification(`${selectedCells.size}개 셀 업데이트 완료`, 'success');
+            clearSelection();
+        }
+        
+        // 편집 패널 열기
+        function openEditPanel(coord) {
+            currentEditCell = coord;
+            const cellData = floorData[currentFloor].grid[coord];
+            
+            document.getElementById('editCellCoord').textContent = coord.split('-')[1];
+            document.getElementById('editType').value = cellData.type;
+            document.getElementById('editName').value = cellData.name;
+            document.getElementById('editInvestigatable').checked = cellData.investigatable || false;
+            
+            document.getElementById('editPanel').style.display = 'block';
+        }
+        
+        // 편집 패널 닫기
+        function closeEditPanel() {
+            document.getElementById('editPanel').style.display = 'none';
+            currentEditCell = null;
+        }
+        
+        // 셀 저장
+        function saveCell() {
+            if (!currentEditCell) return;
+            
+            const cellData = floorData[currentFloor].grid[currentEditCell];
+            cellData.type = document.getElementById('editType').value;
+            cellData.name = document.getElementById('editName').value;
+            cellData.investigatable = document.getElementById('editInvestigatable').checked;
+            
+            showNotification('저장 완료', 'success');
+            closeEditPanel();
+            renderGrid();
+        }
+        
+        // Ruby 코드 생성
+        function generateRubyCode() {
+            let code = `'${currentFloor}' => {\n`;
+            code += `  name: '${floorData[currentFloor].name}',\n`;
+            code += `  difficulty: ${floorData[currentFloor].difficulty},\n`;
+            code += `  investigation_type: '${floorData[currentFloor].investigation_type}',\n`;
+            code += `  entrance: '${floorData[currentFloor].entrance}',\n`;
+            code += `  grid: {\n`;
+            
+            const grid = floorData[currentFloor].grid;
+            Object.keys(grid).sort().forEach(coord => {
+                const cell = grid[coord];
+                code += `    '${coord}' => { type: '${cell.type}', name: '${cell.name}'`;
+                if (cell.investigatable) {
+                    code += `, investigatable: true`;
+                }
+                code += ` },\n`;
+            });
+            
+            code += `  }\n}`;
+            
+            document.getElementById('exportCode').value = code;
+            showNotification('Ruby 코드 생성 완료', 'success');
+        }
+        
+        // 클립보드에 복사
+        function copyToClipboard() {
+            const code = document.getElementById('exportCode').value;
+            if (!code) {
+                showNotification('먼저 코드를 생성하세요', 'error');
+                return;
+            }
+            
+            navigator.clipboard.writeText(code).then(() => {
+                showNotification('클립보드에 복사됨', 'success');
+            });
+        }
+        
+        // Ruby 파일 다운로드
+        function downloadRubyFile() {
+            const code = document.getElementById('exportCode').value;
+            if (!code) {
+                showNotification('먼저 코드를 생성하세요', 'error');
+                return;
+            }
+            
+            const blob = new Blob([code], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${currentFloor}_map.rb`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            showNotification('파일 다운로드 시작', 'success');
+        }
+        
+        // 알림 표시
+        function showNotification(message, type = 'info') {
+            const notification = document.getElementById('notification');
+            notification.textContent = message;
+            notification.className = `notification ${type} show`;
+            
+            setTimeout(() => {
+                notification.classList.remove('show');
+            }, 3000);
+        }
+        
+        // 초기화 실행
+        init();
+    </script>
+</body>
+</html>
