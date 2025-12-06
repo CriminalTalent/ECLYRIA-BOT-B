@@ -1,5 +1,5 @@
 # map_server.rb
-# 실시간 맵 서버
+# 클라리스 오르 실시간 맵 서버
 
 require 'sinatra'
 require 'json'
@@ -105,6 +105,11 @@ get '/map' do
   send_file File.join(settings.public_folder, 'realtime_map.html')
 end
 
+# 관리자 대시보드
+get '/admin' do
+  send_file File.join(settings.public_folder, 'admin_dashboard.html')
+end
+
 # 루트 페이지
 get '/' do
   content_type :html
@@ -114,7 +119,7 @@ get '/' do
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>맵 서버</title>
+        <title>클라리스 오르 맵 서버</title>
         <style>
             body {
                 font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -177,16 +182,16 @@ get '/' do
     </head>
     <body>
         <div class="container">
-            <h1>맵 서버</h1>
+            <h1> 클라리스 오르 맵 서버</h1>
             
             <div class="card">
                 <h2>서버 상태</h2>
-                <p><span class="status">온라인</span></p>
+                <p><span class="status"> 온라인</span></p>
                 <p>서버 시간: #{Time.now.strftime('%Y-%m-%d %H:%M:%S')}</p>
             </div>
             
             <div class="card">
-                <h2>📡 API 엔드포인트</h2>
+                <h2> API 엔드포인트</h2>
                 <ul class="api-list">
                     <li>
                         <code>GET /health</code><br>
@@ -208,14 +213,23 @@ get '/' do
             </div>
             
             <div class="card">
-                <h2>실시간 맵</h2>
+                <h2> 실시간 맵</h2>
                 <p>탐색 시작 시 봇이 제공하는 링크를 클릭하세요.</p>
                 <p>예시: <code>/map?id=explore_B3_123456</code></p>
                 <p><a href="/map">맵 페이지 열기</a></p>
             </div>
             
             <div class="card">
-                <h2>통계</h2>
+                <h2>관리자 대시보드</h2>
+                <p>모든 탐색 모니터링 및 맵 커스터마이징</p>
+                <p>• 실시간 탐색 목록</p>
+                <p>• 색상 테마 변경</p>
+                <p>• 플레이어 위치 추적</p>
+                <p><a href="/admin"><strong>대시보드 열기 →</strong></a></p>
+            </div>
+            
+            <div class="card">
+                <h2> 통계</h2>
                 <p>활성 탐색: <strong>#{CoordinateExplorationSystem.explorations.values.count { |e| e[:active] }}</strong>개</p>
                 <p>전체 탐색: <strong>#{CoordinateExplorationSystem.explorations.size}</strong>개</p>
             </div>
@@ -239,7 +253,7 @@ end
 # 서버 시작 로그
 if __FILE__ == $0
   puts "=" * 50
-  puts "맵 서버 시작"
+  puts "  클라리스 오르 맵 서버 시작"
   puts "=" * 50
   puts "포트: #{settings.port}"
   puts "바인드: #{settings.bind}"
