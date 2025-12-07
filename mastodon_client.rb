@@ -132,8 +132,7 @@ class MastodonClient
       # to_status가 빈 문자열이거나 nil이면 독립 게시물로
       if to_status.nil? || to_status == "" || (to_status.is_a?(String) && to_status.empty?)
         puts "[경고] reply_status가 비어있음, 독립 게시물로 전송"
-        result = @client.create_status(text, visibility: "public")
-        return result && result.id ? { id: result.id.to_s } : nil
+        return post(text)
       end
 
       status_id = to_status.is_a?(Hash) ? to_status[:id] : to_status.id
@@ -146,33 +145,34 @@ class MastodonClient
 
       status_id = status_id.to_s
 
-      result = @client.create_status(
-        text,
+      # HTTP 직접 요청 사용 (gem 버그 우회)
+      uri = URI("#{@base_url}/api/v1/statuses")
+      request = Net::HTTP::Post.new(uri)
+      request['Authorization'] = "Bearer #{@token}"
+      request['Content-Type'] = 'application/json'
+      request.body = {
+        status: text,
         in_reply_to_id: status_id,
         visibility: visibility == "direct" ? "direct" : "public"
-      )
-      
-      if result && result.respond_to?(:id) && result.id
-        puts "[성공] reply ID: #{result.id}"
-        return { id: result.id.to_s }
+      }.to_json
+
+      response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true) do |http|
+        http.request(request)
+      end
+
+      if response.code == '200'
+        result = JSON.parse(response.body)
+        puts "[성공] reply ID: #{result['id']}"
+        return { id: result['id'].to_s }
       else
-        puts "[경고] reply: create_status가 빈 결과 반환, 독립 게시물로 재시도"
-        result2 = @client.create_status(text, visibility: "public")
-        return result2 && result2.id ? { id: result2.id.to_s } : nil
+        puts "[에러] HTTP #{response.code}: #{response.body[0..200]}"
+        return nil
       end
       
     rescue => e
       puts "[에러] reply 실패: #{e.class}: #{e.message}"
       puts e.backtrace.first(3)
-      
-      begin
-        puts "[재시도] 독립 게시물로 전송"
-        result = @client.create_status(text, visibility: "public")
-        return result && result.id ? { id: result.id.to_s } : nil
-      rescue => retry_error
-        puts "[에러] reply 재시도 실패: #{retry_error.message}"
-        return nil
-      end
+      return nil
     end
   end
 
