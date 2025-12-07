@@ -334,8 +334,8 @@ class CoordinateExplorationCommand
   # ===========================
   def update_player_location_in_sheets(user_id, coord)
     begin
-      # 자동 입력 시트에서 유저 찾기
-      rows = @sheet_manager.read_values("자동 입력!A:F")
+      # 위치 시트에서 유저 찾기
+      rows = @sheet_manager.read_values("위치!A:F")
       return unless rows && rows.length > 1
 
       headers = rows[0]
@@ -353,14 +353,14 @@ class CoordinateExplorationCommand
 
       # 유저가 시트에 없으면 새로 추가
       unless user_row_index
-        @sheet_manager.append_values("자동 입력!A:F", [
+        @sheet_manager.append_values("위치!A:F", [
           [user_id, coord, "", Time.now.strftime('%Y-%m-%d %H:%M:%S'), 0, 3]
         ])
         return
       end
 
       # 기존 유저면 업데이트
-      @sheet_manager.update_values("자동 입력!B#{user_row_index}:D#{user_row_index}", [
+      @sheet_manager.update_values("위치!B#{user_row_index}:D#{user_row_index}", [
         [coord, current_location || "", Time.now.strftime('%Y-%m-%d %H:%M:%S')]
       ])
     rescue => e
