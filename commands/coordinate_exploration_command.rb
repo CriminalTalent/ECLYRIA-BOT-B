@@ -37,8 +37,10 @@ class CoordinateExplorationCommand
       
       난이도: #{floor_data["difficulty"]}
       조사 유형: #{floor_data["investigation_type"]}
-      
       입구: #{entrance}
+      
+      탐색 ID: #{exploration[:exploration_id]}
+      실시간 맵: http://65.108.247.150:4567/map?id=#{exploration[:exploration_id]}
       
       ========================================
       [좌표이동/좌표], [좌표조사], [좌표맵], [좌표종료] 명령어를 사용하세요.
@@ -86,6 +88,9 @@ class CoordinateExplorationCommand
       
       참가자: #{all_participants.join(', ')}
       입구: #{entrance}
+      
+      탐색 ID: #{exploration[:exploration_id]}
+      실시간 맵: http://65.108.247.150:4567/map?id=#{exploration[:exploration_id]}
       
       ========================================
       각자 [좌표이동/좌표], [좌표조사] 명령어로 탐색하세요.
