@@ -508,11 +508,11 @@
             } else if (floorParam && floorParam !== 'map') {
                 // 층 코드로 로드 (예: /map/B3)
                 currentFloor = floorParam.toUpperCase();
-                loadFloorOnly(currentFloor);
+                loadFloorWithPlayers(currentFloor);
             } else {
-                // 기본: B3층
+                // 기본: 모든 층의 플레이어 표시 (B3부터)
                 currentFloor = 'B3';
-                loadFloorOnly(currentFloor);
+                loadFloorWithPlayers(currentFloor);
             }
 
             setupAutoRefresh();
@@ -541,7 +541,7 @@
                 if (currentExplorationId) {
                     loadExploration(currentExplorationId);
                 } else if (currentFloor) {
-                    loadFloorOnly(currentFloor);
+                    loadFloorWithPlayers(currentFloor);
                 }
             }, 5000);
         }
@@ -591,6 +591,61 @@
             }
         }
 
+        // 층 + 전체 플레이어 로드
+        async function loadFloorWithPlayers(floor) {
+            try {
+                // 맵 데이터 로드
+                const mapResponse = await fetch(`/api/map-json/${floor}`);
+                const mapData = await mapResponse.json();
+
+                if (!mapData.success) {
+                    showError(`${floor}층 데이터를 찾을 수 없습니다.`);
+                    return;
+                }
+
+                // 전체 플레이어 위치 로드
+                const playersResponse = await fetch('/api/players');
+                const playersData = await playersResponse.json();
+
+                const floorData = mapData.floor;
+                document.getElementById('currentFloor').textContent = floor;
+                document.getElementById('mapTitle').textContent = floorData.name || `${floor}층`;
+                document.getElementById('mapInfo').textContent = 
+                    `난이도: ${floorData.difficulty} | 조사 유형: ${floorData.investigation_type}`;
+
+                // 이 층의 플레이어만 필터링
+                const playersOnThisFloor = playersData.players.filter(p => p.floor === floor);
+                document.getElementById('participantCount').textContent = playersOnThisFloor.length;
+
+                // 플레이어 정보가 있으면 참가자 목록 표시
+                if (playersOnThisFloor.length > 0) {
+                    document.getElementById('explorationInfo').style.display = 'block';
+                    document.getElementById('floorName').textContent = floorData.name || floor;
+                    document.getElementById('difficulty').textContent = floorData.difficulty || '보통';
+                    document.getElementById('investigationType').textContent = floorData.investigation_type || '일반';
+                    document.getElementById('entrance').textContent = floorData.entrance || '-';
+
+                    // 참가자 목록 렌더링
+                    const container = document.getElementById('participantsList');
+                    container.innerHTML = playersOnThisFloor.map(p => `
+                        <div class="participant-card">
+                            <div class="participant-name">@${p.user_id}</div>
+                            <div class="participant-position">${p.position}</div>
+                        </div>
+                    `).join('');
+                } else {
+                    document.getElementById('explorationInfo').style.display = 'none';
+                }
+
+                // 맵 렌더링 (플레이어 위치 포함)
+                renderGridWithPlayers(floor, floorData.grid, playersOnThisFloor);
+                updateLastUpdated();
+            } catch (error) {
+                console.error('맵 로드 실패:', error);
+                showError('맵 로드 실패');
+            }
+        }
+
         // 층만 로드 (탐색 없이)
         async function loadFloorOnly(floor) {
             try {
@@ -624,6 +679,68 @@
             } catch (error) {
                 console.error('맵 렌더링 실패:', error);
                 showError('맵 렌더링 실패');
+            }
+        }
+
+        // 그리드 렌더링 (플레이어 배열 사용)
+        function renderGridWithPlayers(floor, grid, players) {
+            const mapGrid = document.getElementById('mapGrid');
+            mapGrid.innerHTML = '';
+
+            // 플레이어 위치를 좌표 → 사용자 배열로 변환
+            const playersByCoord = {};
+            players.forEach(p => {
+                if (!playersByCoord[p.position]) {
+                    playersByCoord[p.position] = [];
+                }
+                playersByCoord[p.position].push(p.user_id);
+            });
+
+            // 빈 셀
+            const emptyCell = document.createElement('div');
+            mapGrid.appendChild(emptyCell);
+
+            // 열 헤더 (A-H)
+            for (let col of ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']) {
+                const header = document.createElement('div');
+                header.className = 'grid-header';
+                header.textContent = col;
+                mapGrid.appendChild(header);
+            }
+
+            // 행 (1-8)
+            for (let row = 1; row <= 8; row++) {
+                // 행 헤더
+                const rowHeader = document.createElement('div');
+                rowHeader.className = 'grid-header';
+                rowHeader.textContent = row;
+                mapGrid.appendChild(rowHeader);
+
+                // 각 셀
+                for (let col of ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']) {
+                    const coord = `${floor}-${col}${row}`;
+                    const tile = grid[coord] || { type: 'wall', name: '벽' };
+
+                    const cell = document.createElement('div');
+                    cell.className = `grid-cell ${tile.type}`;
+                    cell.dataset.coord = coord;
+                    cell.textContent = tile.name || '';
+
+                    // 플레이어 마커 추가
+                    const playersHere = playersByCoord[coord] || [];
+                    if (playersHere.length > 0) {
+                        const marker = document.createElement('div');
+                        marker.className = 'player-marker';
+                        cell.appendChild(marker);
+
+                        const label = document.createElement('div');
+                        label.className = 'player-label';
+                        label.textContent = playersHere.map(p => '@' + p).join(', ');
+                        cell.appendChild(label);
+                    }
+
+                    mapGrid.appendChild(cell);
+                }
             }
         }
 
