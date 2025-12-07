@@ -8,8 +8,8 @@ set :port, 4567
 set :public_folder, File.dirname(__FILE__) + '/public'
 
 # Google Sheets 서비스 초기화 (선택적)
-SHEET_ID = ENV['GOOGLE_SHEET_ID'] || '1pEnN88w4oX9eFyTZxXpk3wKr80l6iYtPfYBNE-k0dD8'
-CREDENTIALS_PATH = ENV['GOOGLE_CREDENTIALS_PATH'] || 'service_account_key.json'
+SHEET_ID = ENV['GOOGLE_SHEET_ID'] || '1sf6DpuOZXpLVMc8EwJr_gzsUOx_GO2Tp3mgsIQZtkOQ'
+CREDENTIALS_PATH = ENV['GOOGLE_CREDENTIALS_PATH'] || 'credentials.json'
 
 # credentials 파일이 있으면 Google Sheets 연동, 없으면 테스트 모드
 if File.exist?(CREDENTIALS_PATH)
