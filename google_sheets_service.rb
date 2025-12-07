@@ -1,6 +1,5 @@
 # google_sheets_service.rb
 # SheetManager를 활용한 Google Sheets 서비스
-
 require_relative 'sheet_manager'
 
 class GoogleSheetsService
@@ -27,27 +26,29 @@ class GoogleSheetsService
     }
   end
 
-  # 플레이어 위치 가져오기 (조사상태 시트에서)
+  # 플레이어 위치 가져오기 (자동 입력 시트에서)
   def get_player_positions
     return [] unless @sheet_manager
     
-    rows = @sheet_manager.read_values("조사상태!A:Z")
+    rows = @sheet_manager.read_values("자동 입력!A:F")
     return [] unless rows && rows.length > 1
-
-    headers = rows[0]
-    location_col = headers.index("위치")
-    return [] unless location_col
 
     positions = []
     rows.each_with_index do |row, idx|
-      next if idx == 0
-      next unless row[0] && row[location_col]
+      next if idx == 0  # 헤더 스킵
+      next unless row[0] && row[1]  # ID와 현재위치가 있어야 함
       
-      positions << {
-        user_id: row[0].gsub('@', ''),
-        position: row[location_col],
-        floor: extract_floor_from_position(row[location_col])
-      }
+      user_id = row[0].to_s.gsub('@', '')
+      current_position = row[1].to_s.strip
+      
+      # 좌표 형식 확인 (예: "B3-C4")
+      if current_position =~ /^(B[2-5])-([A-H][1-8])$/
+        positions << {
+          user_id: user_id,
+          position: current_position,
+          floor: $1
+        }
+      end
     end
 
     positions
