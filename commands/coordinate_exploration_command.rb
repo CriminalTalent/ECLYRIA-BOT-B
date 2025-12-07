@@ -127,8 +127,11 @@ class CoordinateExplorationCommand
       return
     end
 
-    # 위치 업데이트
+    # 위치 업데이트 (메모리)
     CoordinateExplorationSystem.update_player_position(exploration[:exploration_id], user_id, full_coord)
+
+    # Google Sheets 업데이트 (자동 입력 시트)
+    update_player_location_in_sheets(user_id, full_coord)
 
     @mastodon_client.reply(reply_status, <<~MSG.strip)
       @#{user_id}
@@ -323,6 +326,45 @@ class CoordinateExplorationCommand
   end
 
   private
+
+  # ===========================
+  # Google Sheets 위치 업데이트
+  # ===========================
+  def update_player_location_in_sheets(user_id, coord)
+    begin
+      # 자동 입력 시트에서 유저 찾기
+      rows = @sheet_manager.read_values("자동 입력!A:F")
+      return unless rows && rows.length > 1
+
+      headers = rows[0]
+      user_row_index = nil
+      current_location = nil
+
+      rows.each_with_index do |row, idx|
+        next if idx == 0
+        if row[0]&.gsub('@', '') == user_id.gsub('@', '')
+          user_row_index = idx + 1
+          current_location = row[1] # 현재위치
+          break
+        end
+      end
+
+      # 유저가 시트에 없으면 새로 추가
+      unless user_row_index
+        @sheet_manager.append_values("자동 입력!A:F", [
+          [user_id, coord, "", Time.now.strftime('%Y-%m-%d %H:%M:%S'), 0, 3]
+        ])
+        return
+      end
+
+      # 기존 유저면 업데이트
+      @sheet_manager.update_values("자동 입력!B#{user_row_index}:D#{user_row_index}", [
+        [coord, current_location || "", Time.now.strftime('%Y-%m-%d %H:%M:%S')]
+      ])
+    rescue => e
+      puts "[에러] Google Sheets 위치 업데이트 실패: #{e.message}"
+    end
+  end
 
   # ===========================
   # 보상 처리
