@@ -29,6 +29,9 @@ class CoordinateExplorationCommand
     # 입구 좌표
     entrance = floor_data["entrance"]
     
+    # Google Sheets에 초기 위치 기록
+    update_player_location_in_sheets(user_id, entrance)
+    
     @mastodon_client.reply(reply_status, <<~MSG.strip)
       @#{user_id}
       ========================================
@@ -38,9 +41,6 @@ class CoordinateExplorationCommand
       난이도: #{floor_data["difficulty"]}
       조사 유형: #{floor_data["investigation_type"]}
       입구: #{entrance}
-      
-      탐색 ID: #{exploration[:exploration_id]}
-      실시간 맵: http://65.108.247.150:4567/map?id=#{exploration[:exploration_id]}
       
       ========================================
       [좌표이동/좌표], [좌표조사], [좌표맵], [좌표종료] 명령어를 사용하세요.
@@ -75,6 +75,11 @@ class CoordinateExplorationCommand
 
     entrance = floor_data["entrance"]
     
+    # 모든 참가자 초기 위치 기록
+    all_participants.each do |participant|
+      update_player_location_in_sheets(participant, entrance)
+    end
+    
     mentions = all_participants.map { |p| "@#{p}" }.join(' ')
     
     @mastodon_client.reply(reply_status, <<~MSG.strip)
@@ -88,9 +93,6 @@ class CoordinateExplorationCommand
       
       참가자: #{all_participants.join(', ')}
       입구: #{entrance}
-      
-      탐색 ID: #{exploration[:exploration_id]}
-      실시간 맵: http://65.108.247.150:4567/map?id=#{exploration[:exploration_id]}
       
       ========================================
       각자 [좌표이동/좌표], [좌표조사] 명령어로 탐색하세요.
