@@ -92,6 +92,24 @@ get '/api/floors' do
   { success: true, floors: floors }.to_json
 end
 
+# 활성 탐색 목록 API
+get '/api/explorations' do
+  content_type :json
+  
+  begin
+    require_relative 'core/coordinate_exploration_system'
+    
+    explorations = CoordinateExplorationSystem.explorations.values.select do |exp|
+      exp[:active] == true
+    end
+    
+    { success: true, explorations: explorations }.to_json
+  rescue => e
+    puts "[에러] /api/explorations: #{e.message}"
+    { success: true, explorations: [] }.to_json
+  end
+end
+
 # 관리자 저장 API
 post '/api/admin/save-map' do
   content_type :json
@@ -112,6 +130,11 @@ end
 # 관리자 대시보드
 get '/admin' do
   send_file File.join(settings.public_folder, 'admin_dashboard.html')
+end
+
+# 모니터링 페이지
+get '/monitor' do
+  send_file File.join(settings.public_folder, 'monitor.html')
 end
 
 # 실시간 맵
