@@ -129,6 +129,13 @@ class MastodonClient
 
   def reply(to_status, text)
     begin
+      # to_status가 빈 문자열이거나 nil이면 독립 게시물로
+      if to_status.nil? || to_status == "" || (to_status.is_a?(String) && to_status.empty?)
+        puts "[경고] reply_status가 비어있음, 독립 게시물로 전송"
+        result = @client.create_status(text, visibility: "public")
+        return result && result.id ? { id: result.id.to_s } : nil
+      end
+
       status_id = to_status.is_a?(Hash) ? to_status[:id] : to_status.id
       visibility = to_status.is_a?(Hash) ? to_status[:visibility] : to_status.visibility
 
