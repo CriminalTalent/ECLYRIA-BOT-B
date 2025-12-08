@@ -103,7 +103,7 @@ class CoordinateExplorationCommand
   # ===========================
   # 좌표로 이동
   # ===========================
-  def move_to(user_id, coord, reply_status)
+  def move_to(user_id, floor, coord, reply_status)
     # 활성 탐색 찾기
     exploration = CoordinateExplorationSystem.find_active_exploration(user_id)
     unless exploration
@@ -111,11 +111,22 @@ class CoordinateExplorationCommand
       return
     end
 
-    floor = exploration[:floor]
+    # 층 확인
+    if exploration[:floor] != floor.upcase
+      @mastodon_client.reply(reply_status, "@#{user_id}\n❌ #{floor}층이 아닌 #{exploration[:floor]}층을 탐색 중입니다.")
+      return
+    end
+
     full_coord = "#{floor}-#{coord}"
 
     # 맵 데이터 로드
     floor_data = CoordinateExplorationSystem.get_floor_data(floor)
+    
+    unless floor_data
+      @mastodon_client.reply(reply_status, "@#{user_id}\n❌ 맵 데이터를 찾을 수 없습니다.")
+      return
+    end
+    
     tile = floor_data["grid"][full_coord]
 
     unless tile
@@ -132,7 +143,7 @@ class CoordinateExplorationCommand
     # 위치 업데이트 (메모리)
     CoordinateExplorationSystem.update_player_position(exploration[:exploration_id], user_id, full_coord)
 
-    # Google Sheets 업데이트 (자동 입력 시트)
+    # Google Sheets 업데이트 (위치 시트)
     update_player_location_in_sheets(user_id, full_coord)
 
     @mastodon_client.reply(reply_status, <<~MSG.strip)
