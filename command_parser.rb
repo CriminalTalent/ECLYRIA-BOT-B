@@ -68,9 +68,10 @@ class CommandParser
       participants = participants_text.split('/').map { |p| p.gsub('@', '').strip }.reject(&:empty?)
       @coord_exploration.start_cooperative(user_id, floor, participants, reply_status)
 
-    when /\[좌표이동\/([A-H][1-8])\]/i
-      coord = $1.upcase
-      @coord_exploration.move_to(user_id, coord, reply_status)
+    when /\[좌표이동\/(B[2-5])-([A-H][1-8])\]/i
+      floor = $1.upcase
+      coord = $2.upcase
+      @coord_exploration.move_to(user_id, floor, coord, reply_status)
 
     when /\[좌표조사\]/i
       @coord_exploration.investigate_current(user_id, reply_status)
