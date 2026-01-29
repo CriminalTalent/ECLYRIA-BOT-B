@@ -9,7 +9,9 @@ class MastodonClient
   end
 
   def reply(status, message)
-    post_status(message, in_reply_to_id: status[:id], visibility: 'public')
+    sender = status[:account][:acct]
+    full_message = "@#{sender}\n#{message}"
+    post_status(full_message, in_reply_to_id: status[:id], visibility: 'public')
   rescue => e
     puts "[마스토돈 오류] reply 실패: #{e.message}"
   end
