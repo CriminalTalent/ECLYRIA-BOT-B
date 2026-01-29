@@ -1,94 +1,76 @@
 class BattleState
   @battles = {}
   @mutex = Mutex.new
-  
-  GM_ACCOUNTS = ['Story', 'professor', 'Store', 'FortunaeFons'].freeze
 
-  def self.create(participants, state_data)
-    @mutex.synchronize do
-      battle_id = generate_battle_id(participants)
-      @battles[battle_id] = state_data.merge(battle_id: battle_id)
-      battle_id
-    end
-  end
-
-  def self.get(battle_id)
-    @mutex.synchronize do
-      @battles[battle_id]
-    end
-  end
-
-  def self.find_by_user(user_id)
-    return nil if GM_ACCOUNTS.include?(user_id)
-    
-    @mutex.synchronize do
-      @battles.values.find { |state| state[:participants].include?(user_id) }
-    end
-  end
-
-  def self.find_battle_id_by_user(user_id)
-    return nil if GM_ACCOUNTS.include?(user_id)
-    
-    @mutex.synchronize do
-      battle = @battles.find { |id, state| state[:participants].include?(user_id) }
-      battle ? battle[0] : nil
-    end
-  end
-
-  def self.find_battle_by_participants(participant_list)
-    @mutex.synchronize do
-      @battles.find do |id, state|
-        participant_list.all? { |p| state[:participants].include?(p) }
-      end&.first
-    end
-  end
-
-  def self.player_in_battle?(user_id)
-    return false if GM_ACCOUNTS.include?(user_id)
-    
-    @mutex.synchronize do
-      @battles.values.any? { |state| state[:participants].include?(user_id) }
-    end
-  end
-
-  def self.update(battle_id, updates)
-    @mutex.synchronize do
-      if @battles[battle_id]
-        @battles[battle_id].merge!(updates)
+  class << self
+    def create(thread_id, participants, options = {})
+      @mutex.synchronize do
+        battle_id = "battle_#{thread_id}_#{Time.now.to_i}"
+        
+        @battles[battle_id] = {
+          thread_id: thread_id,
+          battle_id: battle_id,
+          participants: participants,
+          team_a: options[:team_a] || [],
+          team_b: options[:team_b] || [],
+          turn_order: options[:turn_order] || [],
+          current_turn: options[:current_turn],
+          guarded: {},
+          counter: {},
+          hp_data: {},
+          created_at: Time.now,
+          last_action_time: Time.now,
+          reply_status: options[:reply_status],
+          gm_user: options[:gm_user]
+        }
+        
+        participants.each do |user_id|
+          @battles[battle_id][:hp_data][user_id] = options[:hp_data]&.dig(user_id) || 100
+        end
+        
+        battle_id
       end
     end
-  end
 
-  def self.clear(battle_id)
-    @mutex.synchronize do
-      @battles.delete(battle_id)
+    def get(battle_id)
+      @mutex.synchronize { @battles[battle_id] }
     end
-  end
 
-  def self.clear_all
-    @mutex.synchronize do
-      @battles.clear
+    def find_by_thread(thread_id)
+      @mutex.synchronize do
+        @battles.values.find { |b| b[:thread_id] == thread_id }
+      end
     end
-  end
 
-  def self.all
-    @mutex.synchronize do
-      @battles.dup
+    def find_battle_id_by_thread(thread_id)
+      battle = find_by_thread(thread_id)
+      battle ? battle[:battle_id] : nil
     end
-  end
 
-  def self.count
-    @mutex.synchronize do
-      @battles.size
+    def update(battle_id, updates)
+      @mutex.synchronize do
+        return false unless @battles[battle_id]
+        @battles[battle_id].merge!(updates)
+        @battles[battle_id][:last_action_time] = Time.now
+        true
+      end
     end
-  end
 
-  private
+    def delete(battle_id)
+      @mutex.synchronize { @battles.delete(battle_id) }
+    end
 
-  def self.generate_battle_id(participants)
-    sorted = participants.sort.join('_')
-    timestamp = Time.now.to_i
-    random = rand(10000)
-    "battle_#{sorted}_#{timestamp}_#{random}"
+    def all_battles
+      @mutex.synchronize { @battles.dup }
+    end
+
+    def cleanup_old_battles(timeout_seconds = 3600)
+      @mutex.synchronize do
+        now = Time.now
+        @battles.delete_if do |_id, battle|
+          (now - battle[:last_action_time]) > timeout_seconds
+        end
+      end
+    end
   end
 end
