@@ -222,22 +222,27 @@ class BattleEngine
 
     items = (user["아이템"] || "").split(',').map(&:strip)
     
-    # 물약 크기별 이름 매칭
-    potion_pattern = case potion_size
-                     when /소형/i then /소형.*물약/
-                     when /중형/i then /중형.*물약/
-                     when /대형/i then /대형.*물약/
-                     else /물약/
-                     end
+    # 물약 크기별 정확한 이름 매칭
+    potion_name_to_find = case potion_size
+                          when /소형/i then "소형물약"
+                          when /중형/i then "중형물약"
+                          when /대형/i then "대형물약"
+                          else nil
+                          end
     
-    potion_idx = items.find_index { |item| item =~ potion_pattern }
+    unless potion_name_to_find
+      @mastodon_client.reply(status, "물약 크기를 지정해주세요. (소형/중형/대형)")
+      return
+    end
+    
+    # 정확히 일치하는 물약 찾기
+    potion_idx = items.find_index { |item| item == potion_name_to_find }
+    
     unless potion_idx
-      @mastodon_client.reply(status, "#{potion_size} 물약을 보유하고 있지 않습니다.")
+      @mastodon_client.reply(status, "#{potion_name_to_find}을(를) 보유하고 있지 않습니다.")
       return
     end
 
-    potion_name = items[potion_idx]
-    
     # 크기별 회복량
     heal_amount = case potion_size
                   when /소형/i then 10
@@ -275,7 +280,7 @@ class BattleEngine
       user_name = user["이름"] || user_id
       target_name = target_user["이름"] || actual_target
       
-      message = "#{user_name}이(가) #{potion_name}을(를) 사용했습니다.\n"
+      message = "#{user_name}이(가) #{potion_name_to_find}을(를) 사용했습니다.\n"
       if actual_target == user_id
         message += "#{target_name}의 체력이 #{heal_amount} 회복되었습니다.\n"
       else
@@ -314,7 +319,7 @@ class BattleEngine
       user_name = user["이름"] || user_id
       target_name = target_user["이름"] || actual_target
       
-      message = "#{user_name}이(가) #{potion_name}을(를) 사용했습니다.\n"
+      message = "#{user_name}이(가) #{potion_name_to_find}을(를) 사용했습니다.\n"
       if actual_target == user_id
         message += "체력이 #{heal_amount} 회복되었습니다.\n"
       else
