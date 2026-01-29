@@ -19,8 +19,12 @@ class CommandParser
     
     mentioned_users = extract_mentions(clean_text)
     
+    # 체력 확인
+    if command =~ /^체력$/i
+      @battle_engine.check_hp(sender, status)
+      
     # 전투개시 명령어
-    if command =~ /^전투개시$/i
+    elsif command =~ /^전투개시$/i
       # GM은 참가자에서 제외
       participants = mentioned_users
       @battle_engine.start_pvp(status, participants, is_gm: true, gm_user: sender)
