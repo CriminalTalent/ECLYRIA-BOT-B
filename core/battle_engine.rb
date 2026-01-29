@@ -243,7 +243,7 @@ class BattleEngine
       return
     end
 
-    # 크기별 회복량
+    # 크기별 회복량 (HP 100-200 기준)
     heal_amount = case potion_size
                   when /소형/i then 10
                   when /중형/i then 20
@@ -271,7 +271,8 @@ class BattleEngine
       end
 
       current_hp = (target_user["체력"] || "100").to_i
-      new_hp = [current_hp + heal_amount, 100].min
+      max_hp = (target_user["최대체력"] || "100").to_i
+      new_hp = [current_hp + heal_amount, max_hp].min
       @sheet_manager.update_user_hp(actual_target, new_hp)
 
       items.delete_at(potion_idx)
@@ -310,7 +311,8 @@ class BattleEngine
       end
 
       current_hp = (target_user["체력"] || "100").to_i
-      new_hp = [current_hp + heal_amount, 100].min
+      max_hp = (target_user["최대체력"] || "100").to_i
+      new_hp = [current_hp + heal_amount, max_hp].min
       @sheet_manager.update_user_hp(actual_target, new_hp)
 
       items.delete_at(potion_idx)
