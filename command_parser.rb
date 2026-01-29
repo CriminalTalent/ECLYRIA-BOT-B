@@ -1,9 +1,7 @@
 require_relative 'commands/battle_command'
 require_relative 'commands/potion_command'
 require_relative 'commands/heal_command'
-require_relative 'commands/dm_investigation_command'
 require_relative 'commands/hp_command'
-require_relative 'commands/end_battle_command'
 
 class CommandParser
   GM_ACCOUNTS = ['Story', 'professor', 'Store', 'FortunaeFons'].freeze
@@ -14,9 +12,7 @@ class CommandParser
     @battle_command = BattleCommand.new(mastodon_client, sheet_manager)
     @potion_command = PotionCommand.new(mastodon_client, sheet_manager)
     @heal_command = HealCommand.new(mastodon_client, sheet_manager)
-    @dm_investigation_command = DMInvestigationCommand.new(mastodon_client, sheet_manager)
     @hp_command = HpCommand.new(mastodon_client, sheet_manager)
-    @end_battle_command = EndBattleCommand.new(mastodon_client, sheet_manager)
     puts "[파서] 초기화 완료"
   end
 
@@ -29,118 +25,179 @@ class CommandParser
 
   def parse(text, user_id, reply_status)
     text = text.strip
-    clean_text = text.gsub(/@battle\s*/i, '').strip
     
-    puts "[전투봇] 명령 수신: #{clean_text} (from @#{user_id})"
+    puts "[전투봇] 명령 수신: #{text} (from @#{user_id})"
 
-    # GM 전투 중단
-    if text =~ /\[전투중단\s*\/\s*@?([^\s\/\]]+)\s*\/\s*@?([^\s\/\]]+)\s*\]/i
-      if GM_ACCOUNTS.include?(user_id)
-        player1 = $1.strip
-        player2 = $2.strip
-        @end_battle_command.handle(reply_status, user_id, player1, player2)
-      else
-        @mastodon_client.reply(reply_status, "GM 권한이 필요합니다.")
-      end
+    # 물약 명령어 - 가장 유연하게 파싱 (우선순위 높음)
+    if text =~ /물약/i || text =~ /회복/i
+      handle_potion_command(text, user_id, reply_status)
       return
     end
 
-    case clean_text
-    when /\[체력\]/i
-      @hp_command.check_hp(user_id, reply_status)
-
-    # [전투개시/@A/@B] - GM이 A vs B 전투 시작
-    # [전투개시/@A] - 명령자 vs A 전투
-    when /\[(전투개시)\/(.+?)\]/i
-      body = $2.to_s.strip
-      parts = body.split('/').map { |x| x.strip.gsub('@','') }.reject(&:empty?)
-      if parts.length >= 2
-        a, b = parts[0], parts[1]
-        @battle_command.handle_command(user_id, "[전투 #{a} vs #{b}]", reply_status)
-      elsif parts.length == 1
-        target = parts[0]
-        @battle_command.handle_command(user_id, "[전투 #{user_id} vs #{target}]", reply_status)
-      else
-        @mastodon_client.reply(reply_status, "전투개시 형식: [전투개시/@A] 또는 [전투개시/@A/@B]")
+    # GM 전투 중단
+    if text =~ /\[전투중단((?:\/@?\w+)+)\]/i
+      unless GM_ACCOUNTS.include?(user_id)
+        @mastodon_client.reply(reply_status, "GM 권한이 필요합니다.")
+        return
       end
-
-    when /\[다인전투((?:\/@?\S+)+)\]/i
+      
       participants_text = $1
-      participants = participants_text.split('/').map(&:strip).reject(&:empty?).map { |p| p.gsub('@', '') }
-      if participants.length == 4
-        @battle_command.handle_command(user_id, "[다인전투/#{participants.join('/')}]", reply_status)
-      else
-        @mastodon_client.reply(reply_status, "다인전투는 정확히 4명이 필요합니다. (현재: #{participants.length}명)")
-      end
-
-    when /\[허수아비\s*(하|중|상)\]/i
-      diff = $1
-      @battle_command.handle_command(user_id, "[허수아비 #{diff}]", reply_status)
-
-    when /\[공격\/@?(\S+)\]/i
-      target = $1
-      @battle_command.handle_command(user_id, "[공격/#{target}]", reply_status)
-
-    when /\[공격\]/i
-      @battle_command.handle_command(user_id, "[공격]", reply_status)
-
-    when /\[방어\/@?(\S+)\]/i
-      target = $1
-      @battle_command.handle_command(user_id, "[방어/#{target}]", reply_status)
-
-    when /\[방어\]/i
-      @battle_command.handle_command(user_id, "[방어]", reply_status)
-
-    when /\[반격\]/i
-      @battle_command.handle_command(user_id, "[반격]", reply_status)
-
-    when /\[도주\]/i
-      @battle_command.handle_command(user_id, "[도주]", reply_status)
-
-    # 탐색 명령어 (추후 구현)
-    when /\[탐색시작\/([A-Z]\d+)\]/i
-      location = $1
-      @mastodon_client.reply(reply_status, "@#{user_id} 탐색 기능은 준비 중입니다.")
-
-    when /\[협력탐색\/([A-Z]\d+)((?:\/@?\S+)*)\]/i
-      location = $1
-      participants = $2.split('/').map(&:strip).reject(&:empty?).map { |p| p.gsub('@', '') }
-      @mastodon_client.reply(reply_status, "@#{user_id} 협력탐색 기능은 준비 중입니다.")
-
-    when /\[이동\/(\S+)\]/i
-      direction = $1
-      @mastodon_client.reply(reply_status, "@#{user_id} 이동 기능은 준비 중입니다.")
-
-    when /\[목표공격\]/i
-      @mastodon_client.reply(reply_status, "@#{user_id} 목표공격 기능은 준비 중입니다.")
-
-    when /\[조사시작\]/i
-      @mastodon_client.reply(reply_status, "@#{user_id} 조사 기능은 준비 중입니다.")
-
-    when /\[물약\/(\S+)\]/i
-      potion_type = $1
-      @potion_command.use_potion(user_id, reply_status, potion_type)
-
-    when /\[물약사용\]/i, /\[물약\]/i
-      @potion_command.use_potion(user_id, reply_status)
-
-    when /\[전투\s*중단\]/i, /\[전투중단\]/i
-      require_relative 'core/battle_state'
-      battle_id = BattleState.find_battle_id_by_user(user_id)
-      if battle_id
-        BattleState.clear(battle_id)
-        @mastodon_client.reply(reply_status, "@#{user_id} 전투를 중단했습니다.")
-      else
-        @mastodon_client.reply(reply_status, "@#{user_id} 현재 전투 중이 아닙니다.")
-      end
-
-    else
-      puts "[무시] 인식되지 않은 명령: #{clean_text}"
+      participants = participants_text.split('/').map { |p| p.gsub('@', '').strip }.reject(&:empty?)
+      handle_gm_end_battle(user_id, participants, reply_status)
+      return
     end
+
+    # 체력 확인
+    if text =~ /\[체력\]/i
+      @hp_command.check_hp(user_id, reply_status)
+      return
+    end
+
+    # 1:1 전투 개시
+    # [전투/@A] 또는 [전투개시/@A]
+    if text =~ /\[전투(?:개시)?\/(@?\w+)\]/i
+      target = $1.gsub('@', '').strip
+      
+      if GM_ACCOUNTS.include?(user_id)
+        @mastodon_client.reply(reply_status, "GM은 [전투/@A/@B] 형식으로 두 플레이어를 지정해야 합니다.")
+        return
+      end
+      
+      @battle_command.start_1v1(user_id, target, reply_status)
+      return
+    end
+
+    # GM 1:1 전투 개시
+    # [전투/@A/@B]
+    if text =~ /\[전투\/(@?\w+)\/(@?\w+)\]/i
+      unless GM_ACCOUNTS.include?(user_id)
+        @mastodon_client.reply(reply_status, "일반 사용자는 [전투/@상대] 형식을 사용하세요.")
+        return
+      end
+      
+      player1 = $1.gsub('@', '').strip
+      player2 = $2.gsub('@', '').strip
+      @battle_command.start_1v1(player1, player2, reply_status)
+      return
+    end
+
+    # 2:2 전투 개시
+    # [팀전투/@A/@B/@C/@D]
+    if text =~ /\[팀전투((?:\/@?\w+){4})\]/i
+      participants_text = $1
+      participants = participants_text.split('/').map { |p| p.gsub('@', '').strip }.reject(&:empty?)
+      
+      if participants.length != 4
+        @mastodon_client.reply(reply_status, "팀전투는 정확히 4명이 필요합니다.")
+        return
+      end
+      
+      unless GM_ACCOUNTS.include?(user_id) || participants.include?(user_id)
+        @mastodon_client.reply(reply_status, "본인이 참가자에 포함되거나 GM이어야 합니다.")
+        return
+      end
+      
+      @battle_command.start_2v2(participants[0], participants[1], participants[2], participants[3], reply_status)
+      return
+    end
+
+    # 4:4 전투 개시
+    # [대규모전투/@A/@B/@C/@D/@E/@F/@G/@H]
+    if text =~ /\[대규모전투((?:\/@?\w+){8})\]/i
+      participants_text = $1
+      participants = participants_text.split('/').map { |p| p.gsub('@', '').strip }.reject(&:empty?)
+      
+      if participants.length != 8
+        @mastodon_client.reply(reply_status, "대규모전투는 정확히 8명이 필요합니다.")
+        return
+      end
+      
+      unless GM_ACCOUNTS.include?(user_id) || participants.include?(user_id)
+        @mastodon_client.reply(reply_status, "본인이 참가자에 포함되거나 GM이어야 합니다.")
+        return
+      end
+      
+      @battle_command.start_4v4(participants[0], participants[1], participants[2], participants[3],
+                                participants[4], participants[5], participants[6], participants[7], reply_status)
+      return
+    end
+
+    # 전투 행동
+    if text =~ /\[공격(?:\/(@?\w+))?\]/i
+      target = $1 ? $1.gsub('@', '').strip : nil
+      @battle_command.attack(user_id, target, reply_status)
+      return
+    end
+
+    if text =~ /\[방어(?:\/(@?\w+))?\]/i
+      target = $1 ? $1.gsub('@', '').strip : nil
+      @battle_command.defend(user_id, target, reply_status)
+      return
+    end
+
+    if text =~ /\[반격\]/i
+      @battle_command.counter(user_id, reply_status)
+      return
+    end
+
+    if text =~ /\[도주\]/i
+      @battle_command.flee(user_id, reply_status)
+      return
+    end
+
+    puts "[무시] 인식되지 않은 명령: #{text}"
 
   rescue => e
     puts "[에러] CommandParser 오류: #{e.message}"
     puts e.backtrace.first(5)
     @mastodon_client.reply(reply_status, "@#{user_id} 명령 처리 중 오류가 발생했습니다.")
+  end
+
+  private
+
+  def handle_potion_command(text, user_id, reply_status)
+    # 물약 타입 추출
+    potion_type = nil
+    if text =~ /소형/i
+      potion_type = "소형"
+    elsif text =~ /중형/i
+      potion_type = "중형"
+    elsif text =~ /대형/i
+      potion_type = "대형"
+    end
+
+    # 대상 추출 (@유저명 패턴)
+    target = nil
+    if text =~ /@(\w+)/
+      target = $1
+    end
+
+    # 물약 사용
+    if target && target != user_id
+      # 타인에게 사용
+      @potion_command.use_potion_for_target(user_id, reply_status, potion_type, target)
+    else
+      # 본인에게 사용
+      @potion_command.use_potion(user_id, reply_status, potion_type)
+    end
+  end
+
+  def handle_gm_end_battle(gm_id, participants, reply_status)
+    require_relative 'core/battle_state'
+    
+    # 참가자들이 포함된 전투 찾기
+    battle_id = BattleState.find_battle_by_participants(participants)
+    
+    if battle_id
+      battle = BattleState.get(battle_id)
+      BattleState.clear(battle_id)
+      
+      msg = "#{gm_id}님이 전투를 중단했습니다.\n"
+      msg += "참가자: #{participants.join(', ')}"
+      
+      @mastodon_client.reply(reply_status, msg)
+    else
+      @mastodon_client.reply(reply_status, "해당 참가자들의 전투를 찾을 수 없습니다.")
+    end
   end
 end
