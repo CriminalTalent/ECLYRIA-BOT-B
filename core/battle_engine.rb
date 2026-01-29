@@ -6,6 +6,34 @@ class BattleEngine
     @sheet_manager = sheet_manager
   end
 
+  def check_hp(user_id, status)
+    user = @sheet_manager.find_user(user_id)
+    
+    unless user
+      @mastodon_client.reply(status, "등록되지 않은 사용자입니다.")
+      return
+    end
+
+    user_name = user["이름"] || user_id
+    current_hp = (user["체력"] || "100").to_i
+    max_hp = (user["최대체력"] || "100").to_i
+    hp_stat = (user["체력스탯"] || "0").to_i
+    hp_percent = (current_hp.to_f / max_hp * 100).round(1)
+
+    # HP 바 생성 (10칸)
+    filled_bars = (hp_percent / 10).round
+    hp_bar = "█" * filled_bars + "░" * (10 - filled_bars)
+
+    message = "━━━━━━━━━━━━━━━━━━\n"
+    message += "#{user_name}의 상태\n"
+    message += "━━━━━━━━━━━━━━━━━━\n\n"
+    message += "HP: #{current_hp} / #{max_hp} (#{hp_percent}%)\n"
+    message += "#{hp_bar}\n\n"
+    message += "체력 스탯: #{hp_stat}"
+
+    @mastodon_client.reply(status, message)
+  end
+
   def start_pvp(status, participants, is_gm: false, gm_user: nil)
     thread_id = status[:in_reply_to_id] || status[:id]
     
