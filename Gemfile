@@ -4,7 +4,6 @@ source 'https://rubygems.org'
 gem 'dotenv'
 gem 'google-apis-sheets_v4'
 gem 'googleauth'
-gem 'mastodon'
 
 # 맵 서버 의존성 (추가)
 gem 'sinatra', '~> 3.0'
