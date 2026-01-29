@@ -46,8 +46,16 @@ class CommandParser
       end
       
     # 방어
-    elsif command =~ /^방어$/i
-      @battle_engine.defend(sender, status)
+    elsif command =~ /^방어(\/)?(.*)$/i
+      target_match = $2
+      if target_match && !target_match.empty?
+        # 방어/@아군 형식 (대리 방어)
+        target = target_match.gsub('@', '').strip
+        @battle_engine.defend(sender, status, target)
+      else
+        # 방어 (자신)
+        @battle_engine.defend(sender, status, nil)
+      end
       
     # 반격
     elsif command =~ /^반격$/i
