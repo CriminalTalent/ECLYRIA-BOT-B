@@ -1,9 +1,6 @@
 $stdout.sync = true
 $stderr.sync = true
 
-require_relative '/root/http_patch'
-
-# main.rb
 require 'dotenv/load'
 require 'set'
 require 'time'
@@ -12,38 +9,29 @@ require_relative 'mastodon_client'
 require_relative 'sheet_manager'
 require_relative 'command_parser'
 
-# === 시트 설정 ===
-SHEET_ID = ENV['GOOGLE_SHEET_ID'] || '1sf6DpuOZXpLVMc8EwJr_gzsUOx_GO2Tp3mgsIQZtkOQ'
-CREDENTIALS_PATH = ENV['GOOGLE_APPLICATION_CREDENTIALS'] || '/root/mastodon_bots/battle_bot/credentials.json'
+SHEET_ID = ENV['GOOGLE_SHEET_ID']
+CREDENTIALS_PATH = ENV['GOOGLE_CREDENTIALS_PATH']
 
-# === 봇 시작 ===
 BOT_START_TIME = Time.now
 puts "[전투봇] 실행 시작 (#{BOT_START_TIME.strftime('%H:%M:%S')})"
 
-# === Google Sheets 연결 ===
 begin
   sheet_manager = SheetManager.new(SHEET_ID, CREDENTIALS_PATH)
-  puts "Google Sheets 연결 성공: battle_bot"
+  puts "Google Sheets 연결 성공"
 rescue => e
   puts "[Google Sheets 연결 실패] #{e.message}"
   exit
 end
 
-# === 마스토돈 클라이언트 ===
 mastodon = MastodonClient.new(
   base_url: ENV['MASTODON_BASE_URL'],
   token: ENV['MASTODON_TOKEN']
 )
 
-# === 파서 (BattleEngine은 내부에서 생성됨) ===
 parser = CommandParser.new(mastodon, sheet_manager)
 puts "[파서] 초기화 완료"
 
-# ===========================================
-# 🔥 멘션/DM 스트리밍
-# ===========================================
-puts "📅 전투봇 스케줄러 없음 (전투 전용)"
-puts "👂 멘션/DM 스트리밍 시작..."
+puts "멘션 스트리밍 시작..."
 
 processed = Set.new
 MAX_SSL_RETRY = 3
@@ -53,7 +41,7 @@ general_retry_count = 0
 
 loop do
   begin
-    puts "[마스토돈] user 스트림 구독 시작... (@battle 멘션만 처리)"
+    puts "[마스토돈] user 스트림 구독 시작..."
     
     mastodon.stream_user do |status|
       begin
