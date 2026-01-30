@@ -71,17 +71,17 @@ class BattleEngine
     
     battle = BattleState.find_by_thread(thread_id)
     
-    puts "[공격] 전투 찾기 결과: #{battle ? '찾음' : '못 찾음'}"
+    # thread_id로 못 찾으면 참가자로 찾기
+    if !battle
+      puts "[공격] thread_id로 못 찾음, 참가자로 검색..."
+      battle = BattleState.find_by_participant(user_id)
+      puts "[공격] 참가자로 찾기 결과: #{battle ? '찾음' : '못 찾음'}"
+    end
+    
+    puts "[공격] 전투 찾기 최종 결과: #{battle ? '찾음' : '못 찾음'}"
     if battle
       puts "[공격] 찾은 전투 thread_id: #{battle[:thread_id]}"
       puts "[공격] 현재 턴: #{battle[:current_turn]}"
-    end
-    
-    # 모든 전투 목록 출력 (디버깅용)
-    all_battles = BattleState.all_battles
-    puts "[공격] 현재 저장된 전투 수: #{all_battles.size}"
-    all_battles.each do |battle_id, b|
-      puts "[공격] - battle_id: #{battle_id}, thread_id: #{b[:thread_id]}"
     end
 
     unless battle
@@ -181,6 +181,9 @@ class BattleEngine
   def defend(user_id, status, target_id = nil)
     thread_id = status[:in_reply_to_id] || status[:id]
     battle = BattleState.find_by_thread(thread_id)
+    
+    # thread_id로 못 찾으면 참가자로 찾기
+    battle = BattleState.find_by_participant(user_id) unless battle
 
     unless battle
       @mastodon_client.reply(status, "진행 중인 전투가 없습니다.")
@@ -272,6 +275,9 @@ class BattleEngine
   def counter(user_id, status)
     thread_id = status[:in_reply_to_id] || status[:id]
     battle = BattleState.find_by_thread(thread_id)
+    
+    # thread_id로 못 찾으면 참가자로 찾기
+    battle = BattleState.find_by_participant(user_id) unless battle
 
     unless battle
       @mastodon_client.reply(status, "진행 중인 전투가 없습니다.")
@@ -307,6 +313,9 @@ class BattleEngine
   def flee(user_id, status)
     thread_id = status[:in_reply_to_id] || status[:id]
     battle = BattleState.find_by_thread(thread_id)
+    
+    # thread_id로 못 찾으면 참가자로 찾기
+    battle = BattleState.find_by_participant(user_id) unless battle
 
     unless battle
       @mastodon_client.reply(status, "진행 중인 전투가 없습니다.")
@@ -352,6 +361,9 @@ class BattleEngine
   def use_potion(user_id, status, potion_size, target_id = nil)
     thread_id = status[:in_reply_to_id] || status[:id]
     battle = BattleState.find_by_thread(thread_id)
+    
+    # thread_id로 못 찾으면 참가자로 찾기
+    battle = BattleState.find_by_participant(user_id) unless battle
 
     user = @sheet_manager.find_user(user_id)
     unless user
@@ -475,6 +487,9 @@ class BattleEngine
   def stop_battle(user_id, status)
     thread_id = status[:in_reply_to_id] || status[:id]
     battle = BattleState.find_by_thread(thread_id)
+    
+    # thread_id로 못 찾으면 참가자로 찾기
+    battle = BattleState.find_by_participant(user_id) unless battle
 
     unless battle
       @mastodon_client.reply(status, "진행 중인 전투가 없습니다.")
