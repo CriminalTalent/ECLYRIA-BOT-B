@@ -3,7 +3,7 @@ require 'googleauth'
 
 class SheetManager
   SCOPES = [Google::Apis::SheetsV4::AUTH_SPREADSHEETS]
-
+  
   def initialize(sheet_id, credentials_path)
     @sheet_id = sheet_id
     @service = Google::Apis::SheetsV4::SheetsService.new
@@ -11,24 +11,42 @@ class SheetManager
       json_key_io: File.open(credentials_path),
       scope: SCOPES
     )
+    
+    # 타임아웃 설정
+    @service.client_options.open_timeout_sec = 10
+    @service.client_options.read_timeout_sec = 10
+    @service.client_options.send_timeout_sec = 10
+    
+    # 캐시 초기화
+    @stats_cache = nil
+    @users_cache = nil
+    @cache_time = nil
+    @cache_ttl = 60
   end
-
-  def find_user(user_id)
-    # 스탯 탭에서 사용자 정보 읽기
-    # A: ID, B: 이름, C: HP, D: 공격, E: 방어, F: 민첩, G: 행운, H: 체력
+  
+  def load_all_data
+    # 캐시가 유효하면 재사용
+    if @cache_time && (Time.now - @cache_time) < @cache_ttl
+      return { stats: @stats_cache, users: @users_cache }
+    end
+    
+    puts "[시트] 전체 데이터 로드 중..."
+    start = Time.now
+    
+    # 스탯 탭
     stats_range = '스탯!A:H'
     stats_response = @service.get_spreadsheet_values(@sheet_id, stats_range)
-    return nil unless stats_response.values
-
-    user_data = nil
-    stats_response.values[1..-1].each do |row|
-      next if row.empty?
-      if row[0] == user_id
-        # 스탯 읽기 (0-10 범위로 제한)
+    stats_data = {}
+    
+    if stats_response.values
+      stats_response.values[1..-1].each do |row|
+        next if row.empty? || !row[0]
+        user_id = row[0]
+        
         hp_stat = row[7] ? [[row[7].to_i, 0].max, 10].min : 0
         max_hp = 100 + (hp_stat * 10)
         
-        user_data = {
+        stats_data[user_id] = {
           "ID" => row[0],
           "이름" => row[1] || user_id,
           "체력" => row[2] ? [[row[2].to_i, 0].max, max_hp].min.to_s : max_hp.to_s,
@@ -39,30 +57,51 @@ class SheetManager
           "행운" => row[6] ? [[row[6].to_i, 0].max, 10].min.to_s : "0",
           "체력스탯" => hp_stat.to_s
         }
-        break
       end
     end
     
-    return nil unless user_data
-    
-    # 사용자 탭에서 아이템 정보 읽기
+    # 사용자 탭 (아이템)
     user_range = '사용자!A:J'
     user_response = @service.get_spreadsheet_values(@sheet_id, user_range)
+    users_data = {}
     
     if user_response.values
       user_response.values[1..-1].each do |row|
-        next if row.empty?
-        if row[0] == user_id
-          user_data["아이템"] = row[8] || "" # I열
-          break
-        end
+        next if row.empty? || !row[0]
+        user_id = row[0]
+        users_data[user_id] = row[8] || "" # I열: 아이템
       end
     end
+    
+    @stats_cache = stats_data
+    @users_cache = users_data
+    @cache_time = Time.now
+    
+    elapsed = Time.now - start
+    puts "[시트] 로드 완료 (#{elapsed.round(2)}초, 사용자 #{stats_data.size}명)"
+    
+    { stats: stats_data, users: users_data }
+  rescue => e
+    puts "[시트 오류] load_all_data 실패: #{e.message}"
+    { stats: @stats_cache || {}, users: @users_cache || {} }
+  end
+
+  def find_user(user_id)
+    data = load_all_data
+    user_data = data[:stats][user_id]
+    return nil unless user_data
+    
+    # 아이템 정보 추가
+    user_data = user_data.dup
+    user_data["아이템"] = data[:users][user_id] || ""
     
     user_data
   end
 
   def update_user_hp(user_id, new_hp)
+    # 캐시 무효화
+    @cache_time = nil
+    
     # 스탯 탭에서 HP 업데이트
     range = '스탯!A:H'
     response = @service.get_spreadsheet_values(@sheet_id, range)
@@ -101,7 +140,7 @@ class SheetManager
 
     headers = response.values[0]
     users = []
-
+    
     response.values[1..-1].each do |row|
       next if row.empty?
       user_data = {}
@@ -111,5 +150,9 @@ class SheetManager
       users << user_data
     end
     users
+  end
+  
+  def clear_cache
+    @cache_time = nil
   end
 end
