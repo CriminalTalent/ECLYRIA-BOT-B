@@ -167,11 +167,14 @@ class BattleEngine
       next_user_data = @sheet_manager.find_user(next_turn_user)
       next_user_name = next_user_data["이름"] || next_turn_user
 
+      message += build_hp_status(battle)
+      
       team_mode = battle[:team_a].any?
+      message += "\n\n#{next_user_name}의 차례\n"
       if team_mode
-        message += "\n\n#{next_user_name}의 차례\n[공격/@타겟] [방어] [방어/@아군] [반격] [물약사용/크기] [도주]"
+        message += "[공격/@타겟] [방어] [방어/@아군] [반격] [물약사용/크기] [도주]"
       else
-        message += "\n\n#{next_user_name}의 차례\n[공격] [방어] [반격] [물약사용/크기] [도주]"
+        message += "[공격] [방어] [반격] [물약사용/크기] [도주]"
       end
 
       @mastodon_client.reply_with_mentions(status, message, battle[:participants])
@@ -239,8 +242,9 @@ class BattleEngine
       next_user_name = next_user_data["이름"] || next_turn_user
 
       message = "#{user_name}이(가) #{target_name}을(를) 보호하는 태세를 취했습니다.\n"
-      message += "다음 공격 시 #{user_name}이(가) 대신 받습니다.\n\n"
-      message += "#{next_user_name}의 차례\n[공격/@타겟] [방어] [방어/@아군] [반격] [물약사용/크기] [도주]"
+      message += "다음 공격 시 #{user_name}이(가) 대신 받습니다."
+      message += build_hp_status(battle)
+      message += "\n\n#{next_user_name}의 차례\n[공격/@타겟] [방어] [방어/@아군] [반격] [물약사용/크기] [도주]"
 
       @mastodon_client.reply_with_mentions(status, message, battle[:participants])
     else
@@ -261,11 +265,13 @@ class BattleEngine
       next_user_name = next_user_data["이름"] || next_turn_user
 
       team_mode = battle[:team_a].any?
-      message = "#{user_name}이(가) 방어 태세를 취했습니다.\n\n"
+      message = "#{user_name}이(가) 방어 태세를 취했습니다."
+      message += build_hp_status(battle)
+      message += "\n\n#{next_user_name}의 차례\n"
       if team_mode
-        message += "#{next_user_name}의 차례\n[공격/@타겟] [방어] [방어/@아군] [반격] [물약사용/크기] [도주]"
+        message += "[공격/@타겟] [방어] [방어/@아군] [반격] [물약사용/크기] [도주]"
       else
-        message += "#{next_user_name}의 차례\n[공격] [방어] [반격] [물약사용/크기] [도주]"
+        message += "[공격] [방어] [반격] [물약사용/크기] [도주]"
       end
 
       @mastodon_client.reply_with_mentions(status, message, battle[:participants])
@@ -304,8 +310,9 @@ class BattleEngine
     next_user_data = @sheet_manager.find_user(next_turn_user)
     next_user_name = next_user_data["이름"] || next_turn_user
 
-    message = "#{user_name}이(가) 반격 태세를 취했습니다.\n\n"
-    message += "#{next_user_name}의 차례\n[공격] [방어] [반격] [물약사용/크기] [도주]"
+    message = "#{user_name}이(가) 반격 태세를 취했습니다."
+    message += build_hp_status(battle)
+    message += "\n\n#{next_user_name}의 차례\n[공격] [방어] [반격] [물약사용/크기] [도주]"
 
     @mastodon_client.reply_with_mentions(status, message, battle[:participants])
   end
@@ -342,7 +349,8 @@ class BattleEngine
       BattleState.delete(battle[:battle_id])
       @mastodon_client.reply_with_mentions(status, message, battle[:participants])
     else
-      message += "도주에 실패했습니다.\n\n"
+      message += "도주에 실패했습니다."
+      
       next_turn_user = get_next_turn(battle)
       BattleState.update(battle[:battle_id], {
         current_turn: next_turn_user,
@@ -352,7 +360,9 @@ class BattleEngine
 
       next_user_data = @sheet_manager.find_user(next_turn_user)
       next_user_name = next_user_data["이름"] || next_turn_user
-      message += "#{next_user_name}의 차례\n[공격] [방어] [반격] [물약사용/크기] [도주]"
+      
+      message += build_hp_status(battle)
+      message += "\n\n#{next_user_name}의 차례\n[공격] [방어] [반격] [물약사용/크기] [도주]"
 
       @mastodon_client.reply_with_mentions(status, message, battle[:participants])
     end
@@ -438,7 +448,7 @@ class BattleEngine
       else
         message += "#{target_name}을(를) 치료했습니다. 체력 +#{heal_amount}\n"
       end
-      message += "현재 HP: #{new_hp}\n\n"
+      message += "현재 HP: #{new_hp}"
 
       next_turn_user = get_next_turn(battle)
       BattleState.update(battle[:battle_id], {
@@ -449,7 +459,9 @@ class BattleEngine
 
       next_user_data = @sheet_manager.find_user(next_turn_user)
       next_user_name = next_user_data["이름"] || next_turn_user
-      message += "#{next_user_name}의 차례\n[공격] [방어] [반격] [물약사용/크기] [도주]"
+      
+      message += build_hp_status(battle)
+      message += "\n\n#{next_user_name}의 차례\n[공격] [방어] [반격] [물약사용/크기] [도주]"
 
       @mastodon_client.reply_with_mentions(status, message, battle[:participants])
     else
@@ -507,6 +519,70 @@ class BattleEngine
   end
 
   private
+
+  def build_hp_status(battle)
+    message = "\n━━━━━━━━━━━━━━━━━━\n"
+    message += "현재 체력\n"
+    
+    team_mode = battle[:team_a].any?
+    
+    if team_mode
+      # 팀 모드
+      message += "━━━━━━━━━━━━━━━━━━\n"
+      
+      # 팀 A
+      team_a_alive = battle[:team_a].select { |id| battle[:participants].include?(id) }
+      team_a_alive.each do |user_id|
+        user = @sheet_manager.find_user(user_id)
+        name = user["이름"] || user_id
+        hp = user["체력"].to_i
+        max_hp = user["최대체력"].to_i
+        hp_percent = (hp.to_f / max_hp * 100).round(0)
+        
+        bar_length = 10
+        filled = (hp_percent / 10.0).round
+        bar = "█" * filled + "░" * (bar_length - filled)
+        
+        message += "#{name}: #{hp}/#{max_hp} #{bar}\n"
+      end
+      
+      message += "━━━━━━━━━━━━━━━━━━\n"
+      
+      # 팀 B
+      team_b_alive = battle[:team_b].select { |id| battle[:participants].include?(id) }
+      team_b_alive.each do |user_id|
+        user = @sheet_manager.find_user(user_id)
+        name = user["이름"] || user_id
+        hp = user["체력"].to_i
+        max_hp = user["최대체력"].to_i
+        hp_percent = (hp.to_f / max_hp * 100).round(0)
+        
+        bar_length = 10
+        filled = (hp_percent / 10.0).round
+        bar = "█" * filled + "░" * (bar_length - filled)
+        
+        message += "#{name}: #{hp}/#{max_hp} #{bar}\n"
+      end
+    else
+      # 1:1 모드
+      battle[:participants].each do |user_id|
+        user = @sheet_manager.find_user(user_id)
+        name = user["이름"] || user_id
+        hp = user["체력"].to_i
+        max_hp = user["최대체력"].to_i
+        hp_percent = (hp.to_f / max_hp * 100).round(0)
+        
+        bar_length = 10
+        filled = (hp_percent / 10.0).round
+        bar = "█" * filled + "░" * (bar_length - filled)
+        
+        message += "#{name}: #{hp}/#{max_hp} #{bar}\n"
+      end
+    end
+    
+    message += "━━━━━━━━━━━━━━━━━━"
+    message
+  end
 
   def start_1v1(status, participants, thread_id, gm_user)
     user_a_id, user_b_id = participants
@@ -791,7 +867,9 @@ class BattleEngine
 
         next_user_data = @sheet_manager.find_user(next_turn_user)
         next_user_name = next_user_data["이름"] || next_turn_user
-        message += "\n#{next_user_name}의 차례\n[공격/@타겟] [방어] [방어/@아군] [반격] [물약사용/크기] [도주]"
+        
+        message += build_hp_status(battle)
+        message += "\n\n#{next_user_name}의 차례\n[공격/@타겟] [방어] [방어/@아군] [반격] [물약사용/크기] [도주]"
       end
     else
       winner_id = battle[:participants].find { |p| p != defeated_id }
