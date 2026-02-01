@@ -60,8 +60,8 @@ class SheetManager
       end
     end
     
-    # 사용자 탭 (아이템)
-    user_range = '사용자!A:J'
+    # 사용자 탭 (D열: 아이템)
+    user_range = '사용자!A:D'
     user_response = @service.get_spreadsheet_values(@sheet_id, user_range)
     users_data = {}
     
@@ -69,7 +69,7 @@ class SheetManager
       user_response.values[1..-1].each do |row|
         next if row.empty? || !row[0]
         user_id = row[0]
-        users_data[user_id] = row[8] || "" # I열: 아이템
+        users_data[user_id] = row[3] || "" # D열: 아이템
       end
     end
     
@@ -99,9 +99,6 @@ class SheetManager
   end
 
   def update_user_hp(user_id, new_hp)
-    # 캐시 무효화
-    @cache_time = nil
-    
     # 스탯 탭에서 HP 업데이트
     range = '스탯!A:H'
     response = @service.get_spreadsheet_values(@sheet_id, range)
@@ -124,12 +121,52 @@ class SheetManager
           value_range,
           value_input_option: 'RAW'
         )
+        
+        # 캐시 업데이트 (무효화 대신)
+        if @stats_cache && @stats_cache[user_id]
+          @stats_cache[user_id]["체력"] = clamped_hp.to_s
+          puts "[캐시] #{user_id} 체력 업데이트: #{clamped_hp}"
+        end
+        
         return true
       end
     end
     false
   rescue => e
     puts "[시트 오류] HP 업데이트 실패: #{e.message}"
+    false
+  end
+  
+  def update_user_items(user_id, items_string)
+    # 사용자 탭 D열에 아이템 업데이트
+    range = '사용자!A:D'
+    response = @service.get_spreadsheet_values(@sheet_id, range)
+    return false unless response.values
+
+    response.values.each_with_index do |row, idx|
+      next if idx == 0
+      if row[0] == user_id
+        cell_range = "사용자!D#{idx + 1}"
+        value_range = Google::Apis::SheetsV4::ValueRange.new(values: [[items_string]])
+        @service.update_spreadsheet_value(
+          @sheet_id,
+          cell_range,
+          value_range,
+          value_input_option: 'RAW'
+        )
+        
+        # 캐시 업데이트
+        if @users_cache
+          @users_cache[user_id] = items_string
+          puts "[캐시] #{user_id} 아이템 업데이트"
+        end
+        
+        return true
+      end
+    end
+    false
+  rescue => e
+    puts "[시트 오류] 아이템 업데이트 실패: #{e.message}"
     false
   end
 
