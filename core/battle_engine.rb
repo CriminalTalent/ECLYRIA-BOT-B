@@ -172,9 +172,9 @@ class BattleEngine
       team_mode = battle[:team_a].any?
       message += "\n\n#{next_user_name}의 차례\n"
       if team_mode
-        message += "[공격/@타겟] [방어] [방어/@아군] [반격] [물약사용/크기] [도주]"
+        message += "[공격/@타겟] [방어] [방어/@아군] [반격] [물약사용/크기/@타겟]"
       else
-        message += "[공격] [방어] [반격] [물약사용/크기] [도주]"
+        message += "[공격] [방어] [반격] [물약사용/크기/@타겟]"
       end
 
       @mastodon_client.reply_with_mentions(status, message, battle[:participants])
@@ -244,7 +244,7 @@ class BattleEngine
       message = "#{user_name}이(가) #{target_name}을(를) 보호하는 태세를 취했습니다.\n"
       message += "다음 공격 시 #{user_name}이(가) 대신 받습니다."
       message += build_hp_status(battle)
-      message += "\n\n#{next_user_name}의 차례\n[공격/@타겟] [방어] [방어/@아군] [반격] [물약사용/크기] [도주]"
+      message += "\n\n#{next_user_name}의 차례\n[공격/@타겟] [방어] [방어/@아군] [반격] [물약사용/크기/@타겟]"
 
       @mastodon_client.reply_with_mentions(status, message, battle[:participants])
     else
@@ -269,9 +269,9 @@ class BattleEngine
       message += build_hp_status(battle)
       message += "\n\n#{next_user_name}의 차례\n"
       if team_mode
-        message += "[공격/@타겟] [방어] [방어/@아군] [반격] [물약사용/크기] [도주]"
+        message += "[공격/@타겟] [방어] [방어/@아군] [반격] [물약사용/크기/@타겟]"
       else
-        message += "[공격] [방어] [반격] [물약사용/크기] [도주]"
+        message += "[공격] [방어] [반격] [물약사용/크기/@타겟]"
       end
 
       @mastodon_client.reply_with_mentions(status, message, battle[:participants])
@@ -310,62 +310,17 @@ class BattleEngine
     next_user_data = @sheet_manager.find_user(next_turn_user)
     next_user_name = next_user_data["이름"] || next_turn_user
 
+    team_mode = battle[:team_a].any?
     message = "#{user_name}이(가) 반격 태세를 취했습니다."
     message += build_hp_status(battle)
-    message += "\n\n#{next_user_name}의 차례\n[공격] [방어] [반격] [물약사용/크기] [도주]"
+    message += "\n\n#{next_user_name}의 차례\n"
+    if team_mode
+      message += "[공격/@타겟] [방어] [방어/@아군] [반격] [물약사용/크기/@타겟]"
+    else
+      message += "[공격] [방어] [반격] [물약사용/크기/@타겟]"
+    end
 
     @mastodon_client.reply_with_mentions(status, message, battle[:participants])
-  end
-
-  def flee(user_id, status)
-    thread_id = status[:in_reply_to_id] || status[:id]
-    battle = BattleState.find_by_thread(thread_id)
-    
-    # thread_id로 못 찾으면 참가자로 찾기
-    battle = BattleState.find_by_participant(user_id) unless battle
-
-    unless battle
-      @mastodon_client.reply(status, "진행 중인 전투가 없습니다.")
-      return
-    end
-
-    unless battle[:current_turn] == user_id
-      @mastodon_client.reply(status, "당신의 차례가 아닙니다.")
-      return
-    end
-
-    user = @sheet_manager.find_user(user_id)
-    user_name = user["이름"] || user_id
-
-    user_agi = (user["민첩"] || 10).to_i
-    flee_roll = rand(1..20)
-    flee_total = user_agi + flee_roll
-
-    message = "#{user_name}의 도주 시도\n"
-    message += "민첩: #{user_agi} + D20: #{flee_roll} = #{flee_total}\n\n"
-
-    if flee_total >= 15
-      message += "도주에 성공했습니다.\n전투가 종료되었습니다."
-      BattleState.delete(battle[:battle_id])
-      @mastodon_client.reply_with_mentions(status, message, battle[:participants])
-    else
-      message += "도주에 실패했습니다."
-      
-      next_turn_user = get_next_turn(battle)
-      BattleState.update(battle[:battle_id], {
-        current_turn: next_turn_user,
-        guarded: {},
-        counter: {}
-      })
-
-      next_user_data = @sheet_manager.find_user(next_turn_user)
-      next_user_name = next_user_data["이름"] || next_turn_user
-      
-      message += build_hp_status(battle)
-      message += "\n\n#{next_user_name}의 차례\n[공격] [방어] [반격] [물약사용/크기] [도주]"
-
-      @mastodon_client.reply_with_mentions(status, message, battle[:participants])
-    end
   end
 
   def use_potion(user_id, status, potion_size, target_id = nil)
@@ -404,7 +359,7 @@ class BattleEngine
       return
     end
 
-    # 크기별 회복량 (HP 100-200 기준)
+    # 크기별 회복량
     heal_amount = case potion_size
                   when /소형/i then 10
                   when /중형/i then 20
@@ -412,17 +367,19 @@ class BattleEngine
                   else 10
                   end
 
+    # 타겟 지정 (없으면 자신)
+    actual_target = target_id || user_id
+    target_user = @sheet_manager.find_user(actual_target)
+
+    unless target_user
+      @mastodon_client.reply(status, "대상을 찾을 수 없습니다.")
+      return
+    end
+
+    # 전투 중이면 턴 확인
     if battle
       unless battle[:current_turn] == user_id
         @mastodon_client.reply(status, "당신의 차례가 아닙니다.")
-        return
-      end
-
-      actual_target = target_id || user_id
-      target_user = @sheet_manager.find_user(actual_target)
-
-      unless target_user
-        @mastodon_client.reply(status, "대상을 찾을 수 없습니다.")
         return
       end
 
@@ -430,26 +387,31 @@ class BattleEngine
         @mastodon_client.reply(status, "전투 참가자만 회복할 수 있습니다.")
         return
       end
+    end
 
-      current_hp = (target_user["체력"] || "100").to_i
-      max_hp = (target_user["최대체력"] || "100").to_i
-      new_hp = [current_hp + heal_amount, max_hp].min
-      @sheet_manager.update_user_hp(actual_target, new_hp)
+    # 체력 회복
+    current_hp = (target_user["체력"] || "100").to_i
+    max_hp = (target_user["최대체력"] || "100").to_i
+    new_hp = [current_hp + heal_amount, max_hp].min
+    @sheet_manager.update_user_hp(actual_target, new_hp)
 
-      items.delete_at(potion_idx)
-      update_user_items(user_id, items)
+    # 아이템 소비
+    items.delete_at(potion_idx)
+    @sheet_manager.update_user_items(user_id, items.join(', '))
 
-      user_name = user["이름"] || user_id
-      target_name = target_user["이름"] || actual_target
+    user_name = user["이름"] || user_id
+    target_name = target_user["이름"] || actual_target
 
-      message = "#{user_name}이(가) #{potion_name_to_find}을(를) 사용했습니다.\n"
-      if actual_target == user_id
-        message += "#{target_name}의 체력이 #{heal_amount} 회복되었습니다.\n"
-      else
-        message += "#{target_name}을(를) 치료했습니다. 체력 +#{heal_amount}\n"
-      end
-      message += "현재 HP: #{new_hp}"
+    message = "#{user_name}이(가) #{potion_name_to_find}을(를) 사용했습니다.\n"
+    if actual_target == user_id
+      message += "체력이 #{heal_amount} 회복되었습니다.\n"
+    else
+      message += "#{target_name}을(를) 치료했습니다. 체력 +#{heal_amount}\n"
+    end
+    message += "현재 HP: #{new_hp}"
 
+    if battle
+      # 전투 중이면 다음 턴으로
       next_turn_user = get_next_turn(battle)
       BattleState.update(battle[:battle_id], {
         current_turn: next_turn_user,
@@ -461,37 +423,18 @@ class BattleEngine
       next_user_name = next_user_data["이름"] || next_turn_user
       
       message += build_hp_status(battle)
-      message += "\n\n#{next_user_name}의 차례\n[공격] [방어] [반격] [물약사용/크기] [도주]"
+      
+      team_mode = battle[:team_a].any?
+      message += "\n\n#{next_user_name}의 차례\n"
+      if team_mode
+        message += "[공격/@타겟] [방어] [방어/@아군] [반격] [물약사용/크기/@타겟]"
+      else
+        message += "[공격] [방어] [반격] [물약사용/크기/@타겟]"
+      end
 
       @mastodon_client.reply_with_mentions(status, message, battle[:participants])
     else
-      actual_target = target_id || user_id
-      target_user = @sheet_manager.find_user(actual_target)
-
-      unless target_user
-        @mastodon_client.reply(status, "대상을 찾을 수 없습니다.")
-        return
-      end
-
-      current_hp = (target_user["체력"] || "100").to_i
-      max_hp = (target_user["최대체력"] || "100").to_i
-      new_hp = [current_hp + heal_amount, max_hp].min
-      @sheet_manager.update_user_hp(actual_target, new_hp)
-
-      items.delete_at(potion_idx)
-      update_user_items(user_id, items)
-
-      user_name = user["이름"] || user_id
-      target_name = target_user["이름"] || actual_target
-
-      message = "#{user_name}이(가) #{potion_name_to_find}을(를) 사용했습니다.\n"
-      if actual_target == user_id
-        message += "체력이 #{heal_amount} 회복되었습니다.\n"
-      else
-        message += "#{target_name}을(를) 치료했습니다. 체력 +#{heal_amount}\n"
-      end
-      message += "현재 HP: #{new_hp}"
-
+      # 전투 외에는 그냥 응답
       @mastodon_client.reply(status, message)
     end
   end
@@ -620,7 +563,7 @@ class BattleEngine
     message += "#{user_a_name} vs #{user_b_name}\n"
     message += "선공: #{first_turn_name}\n"
     message += "━━━━━━━━━━━━━━━━━━\n\n"
-    message += "#{first_turn_name}의 차례\n[공격] [방어] [반격] [물약사용/크기] [도주]"
+    message += "#{first_turn_name}의 차례\n[공격] [방어] [반격] [물약사용/크기/@타겟]"
 
     @mastodon_client.reply_with_mentions(status, message, participants)
   end
@@ -667,7 +610,7 @@ class BattleEngine
     message += "팀B: #{team_b_names.join(', ')}\n"
     message += "선공: #{first_turn_name}\n"
     message += "━━━━━━━━━━━━━━━━━━\n\n"
-    message += "#{first_turn_name}의 차례\n[공격/@타겟] [방어] [방어/@아군] [반격] [물약사용/크기] [도주]"
+    message += "#{first_turn_name}의 차례\n[공격/@타겟] [방어] [방어/@아군] [반격] [물약사용/크기/@타겟]"
 
     @mastodon_client.reply_with_mentions(status, message, participants)
   end
@@ -714,7 +657,7 @@ class BattleEngine
     message += "팀B: #{team_b_names.join(', ')}\n"
     message += "선공: #{first_turn_name}\n"
     message += "━━━━━━━━━━━━━━━━━━\n\n"
-    message += "#{first_turn_name}의 차례\n[공격/@타겟] [방어] [방어/@아군] [반격] [물약사용/크기] [도주]"
+    message += "#{first_turn_name}의 차례\n[공격/@타겟] [방어] [방어/@아군] [반격] [물약사용/크기/@타겟]"
 
     @mastodon_client.reply_with_mentions(status, message, participants)
   end
@@ -869,7 +812,7 @@ class BattleEngine
         next_user_name = next_user_data["이름"] || next_turn_user
         
         message += build_hp_status(battle)
-        message += "\n\n#{next_user_name}의 차례\n[공격/@타겟] [방어] [방어/@아군] [반격] [물약사용/크기] [도주]"
+        message += "\n\n#{next_user_name}의 차례\n[공격/@타겟] [방어] [방어/@아군] [반격] [물약사용/크기/@타겟]"
       end
     else
       winner_id = battle[:participants].find { |p| p != defeated_id }
@@ -888,33 +831,5 @@ class BattleEngine
     current_idx = battle[:turn_order].index(battle[:current_turn])
     next_idx = (current_idx + 1) % battle[:turn_order].length
     battle[:turn_order][next_idx]
-  end
-
-  def update_user_items(user_id, items)
-    range = '사용자!A:J'
-    response = @sheet_manager.instance_variable_get(:@service).get_spreadsheet_values(
-      @sheet_manager.instance_variable_get(:@sheet_id),
-      range
-    )
-    return false unless response.values
-
-    response.values.each_with_index do |row, idx|
-      next if idx == 0
-      if row[0] == user_id
-        cell_range = "사용자!I#{idx + 1}"
-        value_range = Google::Apis::SheetsV4::ValueRange.new(values: [[items.join(', ')]])
-        @sheet_manager.instance_variable_get(:@service).update_spreadsheet_value(
-          @sheet_manager.instance_variable_get(:@sheet_id),
-          cell_range,
-          value_range,
-          value_input_option: 'RAW'
-        )
-        return true
-      end
-    end
-    false
-  rescue => e
-    puts "[시트 오류] 아이템 업데이트 실패: #{e.message}"
-    false
   end
 end
