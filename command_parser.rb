@@ -1,92 +1,99 @@
-require_relative 'core/battle_engine'
-
 class CommandParser
-  def initialize(mastodon_client, sheet_manager)
+  def initialize(mastodon_client, battle_engine)
     @mastodon_client = mastodon_client
-    @sheet_manager = sheet_manager
-    @battle_engine = BattleEngine.new(mastodon_client, sheet_manager)
+    @battle_engine = battle_engine
+    puts "[파서] 초기화 완료"
   end
 
-  def handle(status)
-    content = status[:content]
+  def parse(status)
     sender = status[:account][:acct]
+    content = status[:content]
     
-    clean_text = strip_html(content)
-    puts "[파서] 원본 HTML: #{content[0..200]}"
+    # HTML 태그 제거
+    puts "[파서] 원본 HTML: #{content[0..150]}"
+    clean_text = content.gsub(/<[^>]+>/, ' ').gsub(/\s+/, ' ').strip
     puts "[파서] HTML 제거: #{clean_text}"
     
-    # 대괄호 안의 전체 내용 추출
+    # 대괄호 내용 추출
     bracket_content = extract_bracket_content(clean_text)
-    
-    unless bracket_content
-      puts "[파서] 대괄호 없음 - 무시"
-      return
-    end
+    return unless bracket_content
     
     puts "[파서] 대괄호 내용: #{bracket_content}"
     
     # 슬래시로 분리
     parts = bracket_content.split('/')
     command = parts[0].strip
-    params = parts[1..-1].map { |p| p.gsub('@', '').strip } if parts.length > 1
+    params = parts[1..-1].map(&:strip).reject(&:empty?) if parts.length > 1
     params ||= []
     
     puts "[파서] 명령어: #{command}"
     puts "[파서] 파라미터: #{params.inspect}"
     
-    # 추가로 본문에서 멘션 추출 (전투개시용)
-    mentioned_users = extract_mentions(clean_text)
-    puts "[파서] 본문 멘션: #{mentioned_users.inspect}"
-
-    # 체력 확인
-    if command =~ /^체력$/i
-      @battle_engine.check_hp(sender, status)
-    # 전투개시 명령어
-    elsif command =~ /^전투개시$/i
-      # 대괄호 안의 파라미터가 있으면 그것 사용, 없으면 본문 멘션 사용
-      participants = params.empty? ? mentioned_users : params
-      @battle_engine.start_pvp(status, participants, is_gm: true, gm_user: sender)
-    # 전투중단
-    elsif command =~ /^전투중단$/i
-      @battle_engine.stop_battle(sender, status)
+    # 본문에서 멘션 추출 (@로 시작하는 것들)
+    mentions = clean_text.scan(/@(\w+)/).flatten.reject { |m| m == 'Battle' }
+    puts "[파서] 본문 멘션: #{mentions.inspect}"
+    
+    # 명령어 처리
+    if command =~ /^전투개시$/i
+      # 파라미터에서 멘션 추출 (@ 제거)
+      participants = params.map { |p| p.gsub('@', '') }
+      
+      # 파라미터가 없으면 본문 멘션 사용
+      if participants.empty?
+        participants = mentions
+      end
+      
+      @battle_engine.start_pvp(status, participants)
+      
     # 공격
     elsif command =~ /^공격$/i
-      target = params.first
+      target = params[0]&.gsub('@', '')
       @battle_engine.attack(sender, status, target)
+      
     # 방어
     elsif command =~ /^방어$/i
-      target = params.first
+      target = params[0]&.gsub('@', '')
       @battle_engine.defend(sender, status, target)
+      
     # 반격
     elsif command =~ /^반격$/i
       @battle_engine.counter(sender, status)
-    # 도주
-    elsif command =~ /^도주$/i
-      @battle_engine.flee(sender, status)
+      
     # 물약사용
     elsif command =~ /^물약사용$/i
-      potion_size = params[0]
-      target = params[1]
-      @battle_engine.use_potion(sender, status, potion_size, target)
+      if params.length >= 1
+        potion_size = params[0]
+        target = params[1]&.gsub('@', '') if params.length >= 2
+        @battle_engine.use_potion(sender, status, potion_size, target)
+      else
+        @mastodon_client.reply(status, "사용법: [물약사용/크기] 또는 [물약사용/크기/@타겟]\n예: [물약사용/소형] 또는 [물약사용/중형/@아군]")
+      end
+      
+    # 체력확인
+    elsif command =~ /^체력확인$/i
+      @battle_engine.check_hp(sender, status)
+      
+    # 전투중단
+    elsif command =~ /^전투중단$/i
+      @battle_engine.stop_battle(sender, status)
+      
+    # 전투종료 (전투중단과 동일)
+    elsif command =~ /^전투종료$/i
+      @battle_engine.stop_battle(sender, status)
+      
     else
       puts "[파서] 알 수 없는 명령어: #{command}"
     end
+    
+  rescue => e
+    puts "[파서 오류] #{e.message}"
+    puts e.backtrace
   end
 
   private
 
-  def strip_html(html)
-    html.gsub(/<[^>]+>/, ' ').gsub(/\s+/, ' ').strip
-  end
-
-  # 대괄호 안의 전체 내용 추출
   def extract_bracket_content(text)
     match = text.match(/\[([^\]]+)\]/)
-    return nil unless match
-    match[1].strip
-  end
-
-  def extract_mentions(text)
-    text.scan(/@(\w+)/).flatten.map(&:strip).uniq
+    match ? match[1] : nil
   end
 end
