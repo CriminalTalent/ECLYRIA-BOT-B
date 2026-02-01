@@ -336,7 +336,10 @@ class BattleEngine
       return
     end
 
-    items = (user["아이템"] || "").split(',').map(&:strip)
+items_raw = user["아이템"] || ""
+    puts "[물약] 원본 아이템: '#{items_raw}'"
+    items = items_raw.split(',').map(&:strip)
+    puts "[물약] 파싱된 아이템: #{items.inspect}"
 
     # 물약 크기별 정확한 이름 매칭
     potion_name_to_find = case potion_size
