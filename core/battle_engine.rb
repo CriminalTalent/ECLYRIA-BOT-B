@@ -336,10 +336,7 @@ class BattleEngine
       return
     end
 
-items_raw = user["아이템"] || ""
-    puts "[물약] 원본 아이템: '#{items_raw}'"
-    items = items_raw.split(',').map(&:strip)
-    puts "[물약] 파싱된 아이템: #{items.inspect}"
+    items = (user["아이템"] || "").split(',').map(&:strip)
 
     # 물약 크기별 정확한 이름 매칭
     potion_name_to_find = case potion_size
@@ -422,10 +419,11 @@ items_raw = user["아이템"] || ""
         counter: {}
       })
 
+      # 체력바 표시
+      message += build_hp_status(battle)
+
       next_user_data = @sheet_manager.find_user(next_turn_user)
       next_user_name = next_user_data["이름"] || next_turn_user
-      
-      message += build_hp_status(battle)
       
       team_mode = battle[:team_a].any?
       message += "\n\n#{next_user_name}의 차례\n"
@@ -435,9 +433,10 @@ items_raw = user["아이템"] || ""
         message += "[공격] [방어] [반격] [물약사용/크기/@타겟]"
       end
 
+      # 전투 참가자 모두 멘션
       @mastodon_client.reply_with_mentions(status, message, battle[:participants])
     else
-      # 전투 외에는 그냥 응답
+      # 전투 외에는 그냥 응답 (태그 없음)
       @mastodon_client.reply(status, message)
     end
   end
