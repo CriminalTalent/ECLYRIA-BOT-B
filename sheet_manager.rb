@@ -12,12 +12,10 @@ class SheetManager
       scope: SCOPES
     )
     
-    # 타임아웃 설정
     @service.client_options.open_timeout_sec = 10
     @service.client_options.read_timeout_sec = 10
     @service.client_options.send_timeout_sec = 10
     
-    # 캐시 초기화
     @stats_cache = nil
     @users_cache = nil
     @cache_time = nil
@@ -25,7 +23,6 @@ class SheetManager
   end
   
   def load_all_data
-    # 캐시가 유효하면 재사용
     if @cache_time && (Time.now - @cache_time) < @cache_ttl
       return { stats: @stats_cache, users: @users_cache }
     end
@@ -33,7 +30,6 @@ class SheetManager
     puts "[시트] 전체 데이터 로드 중..."
     start = Time.now
     
-    # 스탯 탭
     stats_range = '스탯!A:H'
     stats_response = @service.get_spreadsheet_values(@sheet_id, stats_range)
     stats_data = {}
@@ -60,7 +56,6 @@ class SheetManager
       end
     end
     
-    # 사용자 탭 (D열: 아이템)
     user_range = '사용자!A:D'
     user_response = @service.get_spreadsheet_values(@sheet_id, user_range)
     users_data = {}
@@ -69,7 +64,7 @@ class SheetManager
       user_response.values[1..-1].each do |row|
         next if row.empty? || !row[0]
         user_id = row[0]
-        users_data[user_id] = row[3] || "" # D열: 아이템
+        users_data[user_id] = row[3] || ""
       end
     end
     
@@ -91,7 +86,6 @@ class SheetManager
     user_data = data[:stats][user_id]
     return nil unless user_data
     
-    # 아이템 정보 추가
     user_data = user_data.dup
     user_data["아이템"] = data[:users][user_id] || ""
     
@@ -99,7 +93,6 @@ class SheetManager
   end
 
   def update_user_hp(user_id, new_hp)
-    # 스탯 탭에서 HP 업데이트
     range = '스탯!A:H'
     response = @service.get_spreadsheet_values(@sheet_id, range)
     return false unless response.values
@@ -107,11 +100,9 @@ class SheetManager
     response.values.each_with_index do |row, idx|
       next if idx == 0
       if row[0] == user_id
-        # H열에서 체력 스탯 읽기
         hp_stat = row[7] ? [[row[7].to_i, 0].max, 10].min : 0
         max_hp = 100 + (hp_stat * 10)
         
-        # C열에 HP 업데이트 (최대 HP 제한)
         clamped_hp = [[new_hp, 0].max, max_hp].min
         cell_range = "스탯!C#{idx + 1}"
         value_range = Google::Apis::SheetsV4::ValueRange.new(values: [[clamped_hp]])
@@ -122,7 +113,6 @@ class SheetManager
           value_input_option: 'RAW'
         )
         
-        # 캐시 업데이트 (무효화 대신)
         if @stats_cache && @stats_cache[user_id]
           @stats_cache[user_id]["체력"] = clamped_hp.to_s
           puts "[캐시] #{user_id} 체력 업데이트: #{clamped_hp}"
@@ -138,7 +128,6 @@ class SheetManager
   end
   
   def update_user_items(user_id, items_string)
-    # 사용자 탭 D열에 아이템 업데이트
     range = '사용자!A:D'
     response = @service.get_spreadsheet_values(@sheet_id, range)
     return false unless response.values
@@ -155,7 +144,6 @@ class SheetManager
           value_input_option: 'RAW'
         )
         
-        # 캐시 업데이트
         if @users_cache
           @users_cache[user_id] = items_string
           puts "[캐시] #{user_id} 아이템 업데이트"
