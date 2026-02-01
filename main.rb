@@ -8,11 +8,12 @@ require 'time'
 require_relative 'mastodon_client'
 require_relative 'sheet_manager'
 require_relative 'command_parser'
+require_relative 'core/battle_engine'
 
 SHEET_ID = ENV['GOOGLE_SHEET_ID']
 CREDENTIALS_PATH = ENV['GOOGLE_CREDENTIALS_PATH']
-
 BOT_START_TIME = Time.now
+
 puts "[전투봇] 실행 시작 (#{BOT_START_TIME.strftime('%H:%M:%S')})"
 
 begin
@@ -28,7 +29,8 @@ mastodon = MastodonClient.new(
   token: ENV['MASTODON_TOKEN']
 )
 
-parser = CommandParser.new(mastodon, sheet_manager)
+battle_engine = BattleEngine.new(mastodon, sheet_manager)
+parser = CommandParser.new(mastodon, battle_engine)
 puts "[파서] 초기화 완료"
 
 puts "멘션 스트리밍 시작..."
@@ -59,7 +61,7 @@ loop do
         sender = status[:account][:acct]
         puts "[스트리밍] #{mention_id} - @#{sender}"
         
-        parser.handle(status)
+        parser.parse(status)
         
       rescue => e
         puts "[에러] 멘션 처리 오류: #{e.class}: #{e.message}"
