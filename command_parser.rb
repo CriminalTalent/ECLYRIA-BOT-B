@@ -6,11 +6,11 @@ require_relative 'commands/hp_command'
 # 전투 안내 메시지 헬퍼
 module BattleMessages
   def self.get_1v1_options
-    "[공격] [방어] [반격] [물약/크기]"
+    "[공격] [방어] [반격] [물약사용/크기]"
   end
   
   def self.get_multi_options
-    "[공격/@타겟] [방어] [방어/@아군] [반격] [물약/크기/@아군]"
+    "[공격/@타겟] [방어] [방어/@아군] [반격] [물약사용/크기/@아군]"
   end
 end
 
@@ -42,18 +42,12 @@ class CommandParser
     # ============================================
     # 우선순위 1: 물약 명령어 (가장 먼저 처리)
     # ============================================
-    # [물약/크기] 또는 [물약/크기/@타겟]
-    if text =~ /\[물약(?:\/(소형|중형|대형))?(?:\/(@?\w+))?\]/i
+    # [물약사용/크기] 또는 [물약사용/크기/@타겟]
+    if text =~ /\[물약사용(?:\/(소형|중형|대형))?(?:\/(@?\w+))?\]/i
       potion_size = $1 # 크기 (소형/중형/대형)
       target = $2 ? $2.gsub('@', '').strip : nil
       
       handle_potion_command_v2(potion_size, user_id, target, reply_status)
-      return
-    end
-    
-    # 레거시 지원: "물약" 또는 "회복" 단어만 있는 경우
-    if text =~ /물약|회복/i && text !~ /\[물약/
-      handle_potion_command(text, user_id, reply_status)
       return
     end
 
