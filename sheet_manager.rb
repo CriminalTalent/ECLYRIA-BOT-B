@@ -7,7 +7,7 @@ require 'googleauth'
 class SheetManager
   SPREADSHEET_ID = ENV['GOOGLE_SHEET_ID'] || 'your-spreadsheet-id'
   USER_SHEET_NAME = '사용자'
-  
+
   # 컬럼 매핑
   COLUMNS = {
     id: 'A',           # 아이디
@@ -29,23 +29,22 @@ class SheetManager
   # 사용자 찾기
   def find_user(user_id)
     range = "#{USER_SHEET_NAME}!A:I"
-    
+
     begin
       response = @service.get_spreadsheet_values(SPREADSHEET_ID, range)
       values = response.values
-      
+
       return nil if values.nil? || values.empty?
-      
-      # 헤더 제외
+
       header = values[0]
       rows = values[1..-1]
-      
+
       rows.each_with_index do |row, index|
         if row[0] == user_id
-          return build_user_hash(row, index + 2)  # +2는 헤더(1) + 0-based index
+          return build_user_hash(row, index + 2)
         end
       end
-      
+
       nil
     rescue => e
       puts "[시트] 사용자 조회 실패: #{e.message}"
@@ -56,22 +55,21 @@ class SheetManager
   # 모든 사용자 가져오기
   def get_all_users
     range = "#{USER_SHEET_NAME}!A:I"
-    
+
     begin
       response = @service.get_spreadsheet_values(SPREADSHEET_ID, range)
       values = response.values
-      
+
       return [] if values.nil? || values.empty?
-      
-      # 헤더 제외
+
       rows = values[1..-1]
-      
       users = []
+
       rows.each_with_index do |row, index|
         next if row[0].nil? || row[0].strip.empty?
         users << build_user_hash(row, index + 2)
       end
-      
+
       users
     rescue => e
       puts "[시트] 전체 사용자 조회 실패: #{e.message}"
@@ -83,15 +81,15 @@ class SheetManager
   def update_user(user_id, updates)
     user = find_user(user_id)
     return false unless user
-    
+
     row_number = user[:row_number]
-    
+
     updates.each do |field, value|
       column = COLUMNS[field]
       next unless column
-      
+
       cell_range = "#{USER_SHEET_NAME}!#{column}#{row_number}"
-      
+
       begin
         value_range = Google::Apis::SheetsV4::ValueRange.new(values: [[value]])
         @service.update_spreadsheet_value(
@@ -105,8 +103,20 @@ class SheetManager
         return false
       end
     end
-    
+
     true
+  end
+
+  # ✅ 자정 데미지 활성화 여부 (전투설정!B2 체크박스)
+  def midnight_damage_enabled?
+    range = "'전투설정'!B2"
+    begin
+      value = @service.get_spreadsheet_values(SPREADSHEET_ID, range)&.values&.dig(0, 0)
+      value.to_s.strip.upcase == 'TRUE'
+    rescue => e
+      puts "[시트오류] 자정 데미지 설정 읽기 실패: #{e.message}"
+      false
+    end
   end
 
   private
@@ -114,15 +124,13 @@ class SheetManager
   # Google Sheets API 인증
   def authorize
     scopes = [Google::Apis::SheetsV4::AUTH_SPREADSHEETS]
-    
-    # 서비스 계정 JSON 키 파일 경로
     key_file = ENV['GOOGLE_APPLICATION_CREDENTIALS'] || 'credentials.json'
-    
+
     authorizer = Google::Auth::ServiceAccountCredentials.make_creds(
       json_key_io: File.open(key_file),
       scope: scopes
     )
-    
+
     authorizer.fetch_access_token!
     authorizer
   end
@@ -133,7 +141,7 @@ class SheetManager
       "아이디" => row[0],
       "이름" => row[1],
       "HP" => row[2]&.to_i || 0,
-      "아이템" => row[3] || "",  # D열 아이템란
+      "아이템" => row[3] || "",
       "체력" => row[4]&.to_i || 10,
       "공격" => row[5]&.to_i || 10,
       "방어" => row[6]&.to_i || 10,
