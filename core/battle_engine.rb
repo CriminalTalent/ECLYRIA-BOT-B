@@ -44,7 +44,7 @@ class BattleEngine
     message += show_all_hp(state)
     message += "\n━━━━━━━━━━━━━━━━━━\n\n"
     message += "#{user_name}의 차례\n"
-    message += "[공격] [방어] [반격] [물약/크기]"
+    message += "[공격] [방어] [반격] [물약사용/크기]"
 
     response = @client.reply(reply_status, message)
     
@@ -635,7 +635,7 @@ class BattleEngine
 
       message += "\n\n"
       message += "#{opponent_name}의 차례\n"
-      message += "[공격] [방어] [반격] [물약/크기]"
+      message += "[공격] [방어] [반격] [물약사용/크기]"
 
       reply_to_thread(message, state)
 
@@ -645,7 +645,7 @@ class BattleEngine
       
       message = "#{user_name}이(가) 방어 태세를 취했습니다.\n\n"
       message += "#{opponent_name}의 차례\n"
-      message += "[공격] [방어] [반격] [물약/크기]"
+      message += "[공격] [방어] [반격] [물약사용/크기]"
       
       state[:current_turn] = opponent_id
       BattleState.update(battle_id, state)
@@ -658,7 +658,7 @@ class BattleEngine
       
       message = "#{user_name}이(가) 반격 태세를 취했습니다.\n\n"
       message += "#{opponent_name}의 차례\n"
-      message += "[공격] [방어] [반격] [물약/크기]"
+      message += "[공격] [방어] [반격] [물약사용/크기]"
       
       state[:current_turn] = opponent_id
       BattleState.update(battle_id, state)
