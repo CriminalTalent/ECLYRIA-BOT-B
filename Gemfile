@@ -1,11 +1,22 @@
+# Gemfile
 source 'https://rubygems.org'
 
-# 기존 봇 의존성
-gem 'dotenv'
-gem 'google-apis-sheets_v4'
-gem 'googleauth'
+# Mastodon API
+gem 'mastodon-api', '~> 2.1'
 
-# 맵 서버 의존성 (추가)
-gem 'sinatra', '~> 3.0'
-gem 'puma', '~> 6.0'
-gem 'rack', '~> 2.2'
+# Google Sheets API
+gem 'google-api-client', '~> 0.53'
+gem 'googleauth', '~> 1.3'
+
+# 스케줄러 (자정 데미지)
+gem 'rufus-scheduler', '~> 3.8'
+
+# 환경 변수
+gem 'dotenv', '~> 2.8'
+
+# 유틸리티
+gem 'json', '~> 2.6'
+
+group :development do
+  gem 'pry'  # 디버깅
+end
