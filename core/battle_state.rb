@@ -29,10 +29,29 @@ class BattleState
       end
     end
     
-    # 참가자로 전투 찾기
+    # 참가자로 전투 찾기 (가장 최근 전투 반환)
+    # 한 사용자가 여러 전투에 참여 가능하므로 최신 전투 반환
     def find_by_participant(user_id)
       @mutex.synchronize do
-        @battles.values.find { |b| b[:participants]&.include?(user_id) }
+        battles = @battles.values.select { |b| b[:participants]&.include?(user_id) }
+        # 가장 최근에 행동한 전투 반환
+        battles.max_by { |b| b[:last_action_time] || Time.at(0) }
+      end
+    end
+    
+    # 참가자의 모든 전투 찾기
+    def find_all_by_participant(user_id)
+      @mutex.synchronize do
+        @battles.values.select { |b| b[:participants]&.include?(user_id) }
+      end
+    end
+    
+    # 스레드와 참가자로 전투 찾기 (가장 정확한 방법)
+    def find_by_thread_and_participant(thread_ts, user_id)
+      @mutex.synchronize do
+        @battles.values.find do |b|
+          b[:thread_ts] == thread_ts && b[:participants]&.include?(user_id)
+        end
       end
     end
     
