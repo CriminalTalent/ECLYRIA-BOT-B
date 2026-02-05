@@ -1,5 +1,5 @@
 # commands/battle_command.rb
-# Mastodon 기반 전투 명령어 처리
+# Mastodon 기반 전투 명령어 처리 (1:1, 2:2, 4:4)
 
 require_relative '../core/battle_engine'
 require_relative '../state/battle_state'
@@ -105,9 +105,7 @@ class BattleCommand
     team1 = [p1, p2, p3, p4]
     team2 = [p5, p6, p7, p8]
     
-    # 4v4는 2v2 확장 버전으로 구현
-    # TODO: 별도 4v4 로직이 필요하면 추가
-    @client.reply(reply_status, "4:4 전투는 아직 구현 중입니다. 2:2 전투를 이용해주세요.")
+    @engine.start_4v4_battle(team1, team2, reply_status)
   end
 
   # 공격
@@ -130,14 +128,14 @@ class BattleCommand
     
     # 전투 타입에 따라 처리
     case state[:type]
-    when "pvp", "dummy"
+    when "pvp"
       @engine.handle_battle_action(user_id, :attack, battle_id)
-    when "2v2"
+    when "2v2", "4v4"
       unless target_id
-        @client.reply(reply_status, "@#{user_id} 2:2 전투에서는 [공격/@타겟]으로 대상을 지정해야 합니다.")
+        @client.reply(reply_status, "@#{user_id} 팀 전투에서는 [공격/@타겟]으로 대상을 지정해야 합니다.")
         return
       end
-      @engine.handle_2v2_action(user_id, :attack, target_id, battle_id, state)
+      @engine.handle_multi_action(user_id, :attack, target_id, battle_id, state)
     end
   end
 
@@ -161,16 +159,16 @@ class BattleCommand
     
     # 전투 타입에 따라 처리
     case state[:type]
-    when "pvp", "dummy"
+    when "pvp"
       # 자신 방어
       @engine.handle_battle_action(user_id, :defend, battle_id)
-    when "2v2"
+    when "2v2", "4v4"
       if target_id
         # 아군 방어
-        @engine.handle_2v2_action(user_id, :defend_target, target_id, battle_id, state)
+        @engine.handle_multi_action(user_id, :defend_target, target_id, battle_id, state)
       else
         # 자신 방어
-        @engine.handle_2v2_action(user_id, :defend, nil, battle_id, state)
+        @engine.handle_multi_action(user_id, :defend, nil, battle_id, state)
       end
     end
   end
@@ -195,95 +193,10 @@ class BattleCommand
     
     # 전투 타입에 따라 처리
     case state[:type]
-    when "pvp", "dummy"
+    when "pvp"
       @engine.handle_battle_action(user_id, :counter, battle_id)
-    when "2v2"
-      @engine.handle_2v2_action(user_id, :counter, nil, battle_id, state)
-    end
-  end
-
-  # 도주
-  def flee(user_id, reply_status)
-    battle = BattleState.find_by_participant(user_id)
-    
-    unless battle
-      @client.reply(reply_status, "@#{user_id} 전투 중이 아닙니다.")
-      return
-    end
-    
-    battle_id = battle[:battle_id]
-    state = BattleState.get(battle_id)
-    
-    # 턴 확인
-    unless state[:current_turn] == user_id
-      @client.reply(reply_status, "@#{user_id} 당신의 차례가 아닙니다.")
-      return
-    end
-    
-    user = @sheet_manager.find_user(user_id)
-    user_name = user["이름"] || user_id
-    
-    # 도주 성공률 계산 (민첩성 기반)
-    agility = (user["민첩성"] || 10).to_i
-    flee_chance = [30 + agility, 90].min  # 최소 30%, 최대 90%
-    roll = rand(1..100)
-    
-    if roll <= flee_chance
-      # 도주 성공
-      message = "#{user_name}이(가) 전투에서 도주했습니다! (성공률: #{flee_chance}%, 주사위: #{roll})"
-      
-      # 전투 종료
-      if state[:reply_status]
-        @client.reply(state[:reply_status], message)
-      else
-        @client.reply(reply_status, message)
-      end
-      
-      BattleState.clear(battle_id)
-    else
-      # 도주 실패
-      message = "#{user_name}의 도주 실패! (성공률: #{flee_chance}%, 주사위: #{roll})\n"
-      message += "턴이 넘어갑니다."
-      
-      # 턴 넘기기
-      case state[:type]
-      when "pvp"
-        opponent_id = state[:participants].find { |p| p != user_id }
-        opponent = @sheet_manager.find_user(opponent_id)
-        opponent_name = opponent["이름"] || opponent_id
-        
-        state[:current_turn] = opponent_id
-        state[:round] += 1
-        BattleState.update(battle_id, state)
-        
-        message += "\n\n#{opponent_name}의 차례\n"
-        message += "[공격] [방어] [반격] [물약] [도주]"
-        
-      when "2v2"
-        state[:turn_index] += 1
-        if state[:turn_index] >= 4
-          # 라운드 종료, 액션 큐에 도주 실패 추가
-          state[:actions_queue] << { user_id: user_id, action: :flee_failed }
-          BattleState.update(battle_id, state)
-          @engine.process_2v2_round(battle_id, state, message + "\n")
-          return
-        else
-          state[:current_turn] = state[:turn_order][state[:turn_index]]
-          BattleState.update(battle_id, state)
-          
-          next_player = @sheet_manager.find_user(state[:current_turn])
-          next_player_name = next_player["이름"] || state[:current_turn]
-          
-          message += "\n\n#{next_player_name}의 차례\n"
-          message += "[공격/@타겟] [방어] [방어/@아군] [반격] [물약] [도주]"
-        end
-      end
-      
-      if state[:reply_status]
-        @client.reply(state[:reply_status], message)
-      else
-        @client.reply(reply_status, message)
-      end
+    when "2v2", "4v4"
+      @engine.handle_multi_action(user_id, :counter, nil, battle_id, state)
     end
   end
 end
