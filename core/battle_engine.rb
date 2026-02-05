@@ -12,7 +12,11 @@ class BattleEngine
   # --------------------
   def normalize_id(raw)
     return nil if raw.nil?
-    raw.to_s.strip.sub(/\A@/, '').gsub(/\s+/, '').downcase
+    s = raw.to_s.strip
+    s = s.sub(/\A@/, '')
+    s = s.split('@', 2)[0]     # "user@domain" -> "user"
+    s = s.gsub(/\s+/, '')
+    s.downcase
   end
 
   def find_user_safe(raw_id)
@@ -55,8 +59,35 @@ class BattleEngine
     [true, nil]
   end
 
+  # BattleState에서 가져온 battle을 엔진 로직이 확실히 쓰도록 정규화/기본키 세팅
+  def normalize_battle!(battle)
+    battle[:participants] = (battle[:participants] || []).map { |x| normalize_id(x) }.compact
+    battle[:team_a] = (battle[:team_a] || []).map { |x| normalize_id(x) }.compact
+    battle[:team_b] = (battle[:team_b] || []).map { |x| normalize_id(x) }.compact
+    battle[:turn_order] = (battle[:turn_order] || []).map { |x| normalize_id(x) }.compact
+    battle[:current_turn] = normalize_id(battle[:current_turn])
+    battle[:gm_user] = normalize_id(battle[:gm_user]) if battle.key?(:gm_user)
+
+    battle[:guarded] ||= {}
+    battle[:counter] ||= {}
+    battle[:protect] ||= {}
+
+    # protect 맵도 정규화
+    if battle[:protect].is_a?(Hash)
+      fixed = {}
+      battle[:protect].each do |k, v|
+        kk = normalize_id(k)
+        vv = normalize_id(v)
+        fixed[kk] = vv if kk && vv
+      end
+      battle[:protect] = fixed
+    end
+
+    battle
+  end
+
   # --------------------
-  # HP 확인
+  # 체력 확인
   # --------------------
   def check_hp(user_id, status)
     uid = normalize_id(user_id)
@@ -74,6 +105,7 @@ class BattleEngine
     hp_percent = (current_hp.to_f / max_hp * 100).round(1)
 
     filled_bars = (hp_percent / 10).round
+    filled_bars = [[filled_bars, 0].max, 10].min
     hp_bar = "█" * filled_bars + "░" * (10 - filled_bars)
 
     message = "━━━━━━━━━━━━━━━━━━\n"
@@ -91,13 +123,10 @@ class BattleEngine
   # --------------------
   def start_pvp(status, participants, is_gm: false, gm_user: nil)
     thread_id = status[:in_reply_to_id] || status[:id]
-
     participants = (participants || []).map { |p| normalize_id(p) }.compact
     gm_user = normalize_id(gm_user) if gm_user
 
-    puts "[전투] 전투 시작 요청"
-    puts "[전투] thread_id: #{thread_id}"
-    puts "[전투] 참가자: #{participants.inspect}"
+    puts "[전투] 전투 시작 요청 thread_id=#{thread_id} participants=#{participants.inspect}"
 
     if BattleState.find_by_thread(thread_id)
       @mastodon_client.reply(status, "이 스레드에서 이미 전투가 진행 중입니다.")
@@ -118,6 +147,8 @@ class BattleEngine
 
   # --------------------
   # 공격
+  # - 1:1: [공격]
+  # - 팀전: [공격/대상]
   # --------------------
   def attack(user_id, status, target_id = nil)
     user_id = normalize_id(user_id)
@@ -169,8 +200,9 @@ class BattleEngine
         return
       end
 
-      # 대리방어: protect[보호받는사람]=보호자
       original_target_id = target_id
+
+      # 대리방어: protect[보호받는사람]=보호자
       if battle[:protect] && battle[:protect][target_id]
         protector_id = normalize_id(battle[:protect][target_id])
 
@@ -236,6 +268,8 @@ class BattleEngine
 
   # --------------------
   # 방어
+  # - 셀프: [방어]
+  # - 대리: [방어/아군]
   # --------------------
   def defend(user_id, status, target_id = nil)
     user_id = normalize_id(user_id)
@@ -266,7 +300,7 @@ class BattleEngine
 
     team_mode = battle[:team_a].any?
 
-    # 대리 방어: [방어/아군]
+    # 대리 방어
     if target_id
       unless team_mode
         @mastodon_client.reply(status, "1:1 전투에서는 대리 방어를 사용할 수 없습니다.")
@@ -310,7 +344,7 @@ class BattleEngine
 
       @mastodon_client.reply_with_mentions(status, message, battle[:participants])
     else
-      # 셀프 방어: [방어]
+      # 셀프 방어
       battle[:guarded] ||= {}
       battle[:guarded][user_id] = true
 
@@ -397,11 +431,9 @@ class BattleEngine
 
   # --------------------
   # 물약 사용
-  # 규칙:
-  # - 자기: [물약/소형] [물약/중형] [물약/대형]
-  # - 대상: [물약/소형/대상]
-  # - 아이템: 사용자 시트 아이템에 "소형물약/중형물약/대형물약"이 있어야 함
-  # - 회복: 소형10 / 중형20 / 대형50
+  # - 자기: [물약/소형|중형|대형]
+  # - 대상: [물약/소형|중형|대형/대상]
+  # - 회복: 소10 / 중20 / 대50
   # --------------------
   def use_potion(user_id, status, potion_size, target_id = nil)
     user_id = normalize_id(user_id)
@@ -437,7 +469,6 @@ class BattleEngine
                   else 10
                   end
 
-    # 타겟 없으면 자신
     actual_target = target_id || user_id
     target_user = find_user_safe(actual_target)
 
@@ -446,7 +477,6 @@ class BattleEngine
       return
     end
 
-    # 전투 중이면 턴/참가자 체크
     if battle
       normalize_battle!(battle)
 
@@ -461,14 +491,12 @@ class BattleEngine
       end
     end
 
-    # 물약 보유/소비
     ok, err = consume_item_one(user_id, potion_name_to_find)
     unless ok
       @mastodon_client.reply(status, err)
       return
     end
 
-    # 체력 회복
     current_hp = (target_user["체력"] || "100").to_i
     max_hp = (target_user["최대체력"] || "100").to_i
     new_hp = [current_hp + heal_amount, max_hp].min
@@ -518,6 +546,7 @@ class BattleEngine
   # --------------------
   def stop_battle(user_id, status)
     user_id = normalize_id(user_id)
+
     thread_id = status[:in_reply_to_id] || status[:id]
     battle = BattleState.find_by_thread(thread_id)
     battle = BattleState.find_by_participant(user_id) unless battle
@@ -540,32 +569,9 @@ class BattleEngine
   end
 
   # --------------------
-  # private
+  # private helpers
   # --------------------
   private
-
-  def normalize_battle!(battle)
-    battle[:participants] = (battle[:participants] || []).map { |x| normalize_id(x) }.compact
-    battle[:team_a] = (battle[:team_a] || []).map { |x| normalize_id(x) }.compact
-    battle[:team_b] = (battle[:team_b] || []).map { |x| normalize_id(x) }.compact
-    battle[:turn_order] = (battle[:turn_order] || []).map { |x| normalize_id(x) }.compact
-    battle[:current_turn] = normalize_id(battle[:current_turn])
-    battle[:gm_user] = normalize_id(battle[:gm_user]) if battle.key?(:gm_user)
-
-    # protect 맵도 정규화
-    if battle[:protect]
-      fixed = {}
-      battle[:protect].each do |k, v|
-        kk = normalize_id(k)
-        vv = normalize_id(v)
-        fixed[kk] = vv if kk && vv
-      end
-      battle[:protect] = fixed
-    end
-
-    battle[:guarded] ||= {}
-    battle[:counter] ||= {}
-  end
 
   def build_hp_status(battle)
     message = "\n━━━━━━━━━━━━━━━━━━\n"
@@ -644,21 +650,16 @@ class BattleEngine
     user_b_agi = (user_b["민첩"] || 10).to_i + rand(1..20)
     turn_order = user_a_agi >= user_b_agi ? [user_a_id, user_b_id] : [user_b_id, user_a_id]
 
-    battle_id = BattleState.create(
+    BattleState.create(
       thread_id,
       participants,
       {
         turn_order: turn_order,
         current_turn: turn_order[0],
         reply_status: status,
-        gm_user: gm_user,
-        guarded: {},
-        counter: {},
-        protect: {}
+        gm_user: gm_user
       }
     )
-
-    puts "[전투] 1:1 전투 생성 완료 - battle_id: #{battle_id}"
 
     user_a_name = user_a["이름"] || user_a_id
     user_b_name = user_b["이름"] || user_b_id
@@ -693,7 +694,7 @@ class BattleEngine
 
     turn_order = agility_data.sort_by { |d| -d[:agi] }.map { |d| d[:user_id] }
 
-    battle_id = BattleState.create(
+    BattleState.create(
       thread_id,
       participants,
       {
@@ -702,15 +703,12 @@ class BattleEngine
         turn_order: turn_order,
         current_turn: turn_order[0],
         reply_status: status,
-        gm_user: gm_user,
-        guarded: {},
-        counter: {},
-        protect: {}
+        gm_user: gm_user
       }
     )
 
-    team_a_names = team_a.map { |id| (find_user_safe(id)["이름"] rescue id) || id }
-    team_b_names = team_b.map { |id| (find_user_safe(id)["이름"] rescue id) || id }
+    team_a_names = team_a.map { |id| (find_user_safe(id)&.dig("이름") || id) }
+    team_b_names = team_b.map { |id| (find_user_safe(id)&.dig("이름") || id) }
     first_turn_user = find_user_safe(turn_order[0])
     first_turn_name = (first_turn_user && first_turn_user["이름"]) || turn_order[0]
 
@@ -744,7 +742,7 @@ class BattleEngine
 
     turn_order = agility_data.sort_by { |d| -d[:agi] }.map { |d| d[:user_id] }
 
-    battle_id = BattleState.create(
+    BattleState.create(
       thread_id,
       participants,
       {
@@ -753,15 +751,12 @@ class BattleEngine
         turn_order: turn_order,
         current_turn: turn_order[0],
         reply_status: status,
-        gm_user: gm_user,
-        guarded: {},
-        counter: {},
-        protect: {}
+        gm_user: gm_user
       }
     )
 
-    team_a_names = team_a.map { |id| (find_user_safe(id)["이름"] rescue id) || id }
-    team_b_names = team_b.map { |id| (find_user_safe(id)["이름"] rescue id) || id }
+    team_a_names = team_a.map { |id| (find_user_safe(id)&.dig("이름") || id) }
+    team_b_names = team_b.map { |id| (find_user_safe(id)&.dig("이름") || id) }
     first_turn_user = find_user_safe(turn_order[0])
     first_turn_name = (first_turn_user && first_turn_user["이름"]) || turn_order[0]
 
@@ -888,7 +883,6 @@ class BattleEngine
 
   def handle_defeat(battle, defeated_id, status, message)
     defeated_id = normalize_id(defeated_id)
-
     defeated_user = find_user_safe(defeated_id)
     defeated_name = (defeated_user && defeated_user["이름"]) || defeated_id
 
