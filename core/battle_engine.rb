@@ -574,7 +574,7 @@ class BattleEngine
       state[:round] += 1
       BattleState.update(battle_id, state)
 
-      message += "\n━━━━━━━━━━━━━━━━━━\n\n"
+      message += "\n\n"
       message += "#{opponent_name}의 차례\n"
       message += "[공격] [방어] [반격] [물약사용/크기]"
 
@@ -584,8 +584,7 @@ class BattleEngine
       state[:guarded][user_id] = true
       BattleState.update(battle_id, state)
       
-      message = "#{user_name}이(가) 방어 태세를 취했습니다.\n"
-      message += "━━━━━━━━━━━━━━━━━━\n"
+      message = "#{user_name}이(가) 방어 태세를 취했습니다.\n\n"
       message += "#{opponent_name}의 차례\n"
       message += "[공격] [방어] [반격] [물약사용/크기]"
       
@@ -598,8 +597,7 @@ class BattleEngine
       state[:counter][user_id] = true
       BattleState.update(battle_id, state)
       
-      message = "#{user_name}이(가) 반격 태세를 취했습니다.\n"
-      message += "━━━━━━━━━━━━━━━━━━\n"
+      message = "#{user_name}이(가) 반격 태세를 취했습니다.\n\n"
       message += "#{opponent_name}의 차례\n"
       message += "[공격] [방어] [반격] [물약사용/크기]"
       
@@ -691,7 +689,7 @@ class BattleEngine
       state[:round] += 1
       BattleState.update(battle_id, state)
 
-      message += "\n━━━━━━━━━━━━━━━━━━\n\n"
+      message += "\n\n"
       message += "#{user_name}의 차례\n"
       message += "[공격] [방어] [반격] [물약사용/크기]"
 
@@ -718,6 +716,7 @@ class BattleEngine
       
       if guard_total >= dummy_atk_total
         message += "#{user_name}이(가) 공격을 완벽히 막았습니다!\n"
+        message += show_all_hp(state)
       else
         damage = dummy_atk_total - guard_total
         current_hp = (user["HP"] || 0).to_i
@@ -741,7 +740,7 @@ class BattleEngine
       state[:round] += 1
       BattleState.update(battle_id, state)
 
-      message += "\n━━━━━━━━━━━━━━━━━━\n\n"
+      message += "\n\n"
       message += "#{user_name}의 차례\n"
       message += "[공격] [방어] [반격] [물약사용/크기]"
 
