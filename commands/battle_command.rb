@@ -13,17 +13,6 @@ class BattleCommand
 
   # 1:1 전투 시작
   def start_1v1(user_id, opponent_id, reply_status)
-    # 이미 전투 중인지 확인
-    if BattleState.find_by_participant(user_id)
-      @client.reply(reply_status, "@#{user_id} 이미 전투 중입니다!")
-      return
-    end
-    
-    if BattleState.find_by_participant(opponent_id)
-      @client.reply(reply_status, "@#{opponent_id}는 이미 전투 중입니다!")
-      return
-    end
-    
     # 참가자 확인
     user = @sheet_manager.find_user(user_id)
     opponent = @sheet_manager.find_user(opponent_id)
@@ -38,7 +27,7 @@ class BattleCommand
       return
     end
     
-    # 전투 시작
+    # 전투 시작 (중복 체크 제거 - 동시 전투 가능)
     @engine.start_battle(user_id, opponent_id, reply_status)
   end
 
@@ -46,18 +35,10 @@ class BattleCommand
   def start_2v2(p1, p2, p3, p4, reply_status)
     participants = [p1, p2, p3, p4]
     
-    # 중복 확인
+    # 같은 전투 내 중복만 확인
     if participants.uniq.length != 4
       @client.reply(reply_status, "참가자가 중복되었습니다!")
       return
-    end
-    
-    # 이미 전투 중인지 확인
-    participants.each do |pid|
-      if BattleState.find_by_participant(pid)
-        @client.reply(reply_status, "@#{pid}는 이미 전투 중입니다!")
-        return
-      end
     end
     
     # 모든 참가자 확인
@@ -72,6 +53,7 @@ class BattleCommand
     team1 = [p1, p2]
     team2 = [p3, p4]
     
+    # 동시 전투 가능
     @engine.start_2v2_battle(team1, team2, reply_status)
   end
 
@@ -79,18 +61,10 @@ class BattleCommand
   def start_4v4(p1, p2, p3, p4, p5, p6, p7, p8, reply_status)
     participants = [p1, p2, p3, p4, p5, p6, p7, p8]
     
-    # 중복 확인
+    # 같은 전투 내 중복만 확인
     if participants.uniq.length != 8
       @client.reply(reply_status, "참가자가 중복되었습니다!")
       return
-    end
-    
-    # 이미 전투 중인지 확인
-    participants.each do |pid|
-      if BattleState.find_by_participant(pid)
-        @client.reply(reply_status, "@#{pid}는 이미 전투 중입니다!")
-        return
-      end
     end
     
     # 모든 참가자 확인
@@ -105,6 +79,7 @@ class BattleCommand
     team1 = [p1, p2, p3, p4]
     team2 = [p5, p6, p7, p8]
     
+    # 동시 전투 가능
     @engine.start_4v4_battle(team1, team2, reply_status)
   end
 
