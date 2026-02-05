@@ -6,15 +6,11 @@ require_relative 'commands/hp_command'
 # 전투 안내 메시지 헬퍼
 module BattleMessages
   def self.get_1v1_options
-    "[공격] [방어] [반격] [물약] [도주]"
+    "[공격] [방어] [반격] [물약/크기]"
   end
   
-  def self.get_2v2_options
-    "[공격/@타겟] [방어] [방어/@아군] [반격] [물약] [도주]"
-  end
-  
-  def self.get_dummy_options
-    "[공격] [방어] [반격] [물약] [도주]"
+  def self.get_multi_options
+    "[공격/@타겟] [방어] [방어/@아군] [반격] [물약/크기/@아군]"
   end
 end
 
@@ -46,7 +42,17 @@ class CommandParser
     # ============================================
     # 우선순위 1: 물약 명령어 (가장 먼저 처리)
     # ============================================
-    if text =~ /물약/i || text =~ /회복/i
+    # [물약/크기] 또는 [물약/크기/@타겟]
+    if text =~ /\[물약(?:\/(소형|중형|대형))?(?:\/(@?\w+))?\]/i
+      potion_size = $1 # 크기 (소형/중형/대형)
+      target = $2 ? $2.gsub('@', '').strip : nil
+      
+      handle_potion_command_v2(potion_size, user_id, target, reply_status)
+      return
+    end
+    
+    # 레거시 지원: "물약" 또는 "회복" 단어만 있는 경우
+    if text =~ /물약|회복/i && text !~ /\[물약/
       handle_potion_command(text, user_id, reply_status)
       return
     end
@@ -79,22 +85,6 @@ class CommandParser
     # 체력 확인
     if text =~ /\[체력\]/i
       @hp_command.check_hp(user_id, reply_status)
-      return
-    end
-
-    # 허수아비 전투 (난이도별)
-    if text =~ /\[허수아비(?:\/(쉬움|보통|어려움))?\]/i
-      difficulty_map = {
-        "쉬움" => :easy,
-        "보통" => :normal,
-        "어려움" => :hard
-      }
-      difficulty = $1 ? difficulty_map[$1] : :normal
-      
-      # BattleEngine에 허수아비 전투 시작 메서드 필요
-      require_relative 'core/battle_engine'
-      engine = BattleEngine.new(@mastodon_client)
-      engine.start_dummy_battle(user_id, reply_status, difficulty)
       return
     end
 
@@ -181,12 +171,6 @@ class CommandParser
       return
     end
 
-    # 전투 행동 - 도주
-    if text =~ /\[도주\]/i
-      @battle_command.flee(user_id, reply_status)
-      return
-    end
-
     puts "[무시] 인식되지 않은 명령: #{text}"
 
   rescue => e
@@ -196,6 +180,20 @@ class CommandParser
   end
 
   private
+
+  def handle_potion_command_v2(potion_size, user_id, target, reply_status)
+    # 물약 크기 기본값 설정
+    potion_type = potion_size || "소형"
+    
+    # 타겟이 있으면 아군에게, 없으면 본인에게
+    if target && target != user_id
+      # 타인에게 사용
+      @potion_command.use_potion_for_target(user_id, reply_status, potion_type, target)
+    else
+      # 본인에게 사용
+      @potion_command.use_potion(user_id, reply_status, potion_type)
+    end
+  end
 
   def handle_potion_command(text, user_id, reply_status)
     # 물약 타입 추출
