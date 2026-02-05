@@ -1,17 +1,11 @@
 # core/battle_engine.rb
-# Mastodon 기반 전투 엔진
+# Mastodon 기반 전투 엔진 (1:1, 2:2, 4:4 지원)
 
 require_relative '../state/battle_state'
 require_relative 'sheet_manager'
 require 'securerandom'
 
 class BattleEngine
-  DUMMY_STATS = {
-    easy: { hp: 50, atk: 5, def: 3 },
-    normal: { hp: 100, atk: 10, def: 5 },
-    hard: { hp: 150, atk: 15, def: 8 }
-  }.freeze
-
   def initialize(mastodon_client)
     @client = mastodon_client
     @sheet_manager = SheetManager.new
@@ -50,52 +44,7 @@ class BattleEngine
     message += show_all_hp(state)
     message += "\n━━━━━━━━━━━━━━━━━━\n\n"
     message += "#{user_name}의 차례\n"
-    message += "[공격] [방어] [반격] [물약] [도주]"
-
-    response = @client.reply(reply_status, message)
-    
-    if response && response[:id]
-      state[:thread_status] = response
-      BattleState.update(battle_id, state)
-    end
-
-    battle_id
-  end
-
-  # 허수아비 전투 시작
-  def start_dummy_battle(user_id, reply_status, difficulty = :normal)
-    battle_id = "dummy_#{user_id}_#{SecureRandom.hex(4)}"
-    
-    user = @sheet_manager.find_user(user_id)
-    unless user
-      @client.reply(reply_status, "사용자를 찾을 수 없습니다.")
-      return
-    end
-
-    user_name = user["이름"] || user_id
-    dummy_hp = DUMMY_STATS[difficulty][:hp]
-
-    state = {
-      type: "dummy",
-      participants: [user_id],
-      current_turn: user_id,
-      round: 1,
-      difficulty: difficulty,
-      dummy_hp: dummy_hp,
-      guarded: {},
-      counter: {},
-      reply_status: reply_status
-    }
-
-    BattleState.update(battle_id, state)
-
-    message = "🎯 허수아비 전투 시작! (난이도: #{difficulty})\n"
-    message += "#{user_name} vs 허수아비\n"
-    message += "━━━━━━━━━━━━━━━━━━\n"
-    message += show_all_hp(state)
-    message += "\n━━━━━━━━━━━━━━━━━━\n\n"
-    message += "#{user_name}의 차례\n"
-    message += "[공격] [방어] [반격] [물약] [도주]"
+    message += "[공격] [방어] [반격] [물약/크기]"
 
     response = @client.reply(reply_status, message)
     
@@ -119,11 +68,45 @@ class BattleEngine
       return
     end
 
-    # 민첩성 기준 턴 순서 결정
-    turn_order = all_users.sort_by do |uid|
-      user_data = @sheet_manager.find_user(uid)
-      -(user_data["민첩성"] || user_data[:agility] || 10).to_i
+    # 팀별 민첩성 합계 계산
+    team1_agility = team1_users.sum do |uid|
+      user = @sheet_manager.find_user(uid)
+      (user["민첩성"] || user[:agility] || 10).to_i
     end
+    
+    team2_agility = team2_users.sum do |uid|
+      user = @sheet_manager.find_user(uid)
+      (user["민첩성"] || user[:agility] || 10).to_i
+    end
+    
+    # D20 굴리기
+    team1_roll = rand(1..20)
+    team2_roll = rand(1..20)
+    
+    team1_total = team1_agility + team1_roll
+    team2_total = team2_agility + team2_roll
+    
+    # 선공 팀 결정
+    first_team = team1_total >= team2_total ? :team1 : :team2
+    second_team = first_team == :team1 ? :team2 : :team1
+    
+    # 각 팀 내부에서 민첩성 순으로 정렬
+    team1_sorted = team1_users.sort_by do |uid|
+      user = @sheet_manager.find_user(uid)
+      -(user["민첩성"] || user[:agility] || 10).to_i
+    end
+    
+    team2_sorted = team2_users.sort_by do |uid|
+      user = @sheet_manager.find_user(uid)
+      -(user["민첩성"] || user[:agility] || 10).to_i
+    end
+    
+    # 턴 순서: 선공팀 전원 → 후공팀 전원
+    turn_order = if first_team == :team1
+                   team1_sorted + team2_sorted
+                 else
+                   team2_sorted + team1_sorted
+                 end
 
     state = {
       type: "2v2",
@@ -153,13 +136,17 @@ class BattleEngine
 
     message = "⚔️ 2:2 전투 시작!\n"
     message += "팀1: #{team1_names}\n"
-    message += "팀2: #{team2_names}\n"
+    message += "팀2: #{team2_names}\n\n"
+    message += "선공 판정\n"
+    message += "팀1: 민첩성 #{team1_agility} + D20: #{team1_roll} = #{team1_total}\n"
+    message += "팀2: 민첩성 #{team2_agility} + D20: #{team2_roll} = #{team2_total}\n"
+    message += "#{first_team == :team1 ? '팀1' : '팀2'} 선공!\n"
     message += "━━━━━━━━━━━━━━━━━━\n"
     message += show_all_hp(state)
     message += "\n━━━━━━━━━━━━━━━━━━\n\n"
     message += "라운드 1 시작\n"
     message += "#{first_player_name}의 차례\n"
-    message += "[공격/@타겟] [방어] [방어/@아군] [반격] [물약] [도주]"
+    message += "[공격/@타겟] [방어] [방어/@아군] [반격] [물약/크기/@아군]"
 
     response = @client.reply(reply_status, message)
     
@@ -171,7 +158,109 @@ class BattleEngine
     battle_id
   end
 
-  # 전투 액션 처리
+  # 4:4 전투 시작
+  def start_4v4_battle(team1_users, team2_users, reply_status)
+    battle_id = "4v4_#{SecureRandom.hex(6)}"
+    
+    all_users = team1_users + team2_users
+    all_user_data = all_users.map { |uid| @sheet_manager.find_user(uid) }
+    
+    if all_user_data.any?(&:nil?)
+      @client.reply(reply_status, "전투 참가자 중 일부를 찾을 수 없습니다.")
+      return
+    end
+
+    # 팀별 민첩성 합계 계산
+    team1_agility = team1_users.sum do |uid|
+      user = @sheet_manager.find_user(uid)
+      (user["민첩성"] || user[:agility] || 10).to_i
+    end
+    
+    team2_agility = team2_users.sum do |uid|
+      user = @sheet_manager.find_user(uid)
+      (user["민첩성"] || user[:agility] || 10).to_i
+    end
+    
+    # D20 굴리기
+    team1_roll = rand(1..20)
+    team2_roll = rand(1..20)
+    
+    team1_total = team1_agility + team1_roll
+    team2_total = team2_agility + team2_roll
+    
+    # 선공 팀 결정
+    first_team = team1_total >= team2_total ? :team1 : :team2
+    second_team = first_team == :team1 ? :team2 : :team1
+    
+    # 각 팀 내부에서 민첩성 순으로 정렬
+    team1_sorted = team1_users.sort_by do |uid|
+      user = @sheet_manager.find_user(uid)
+      -(user["민첩성"] || user[:agility] || 10).to_i
+    end
+    
+    team2_sorted = team2_users.sort_by do |uid|
+      user = @sheet_manager.find_user(uid)
+      -(user["민첩성"] || user[:agility] || 10).to_i
+    end
+    
+    # 턴 순서: 선공팀 전원 → 후공팀 전원
+    turn_order = if first_team == :team1
+                   team1_sorted + team2_sorted
+                 else
+                   team2_sorted + team1_sorted
+                 end
+
+    state = {
+      type: "4v4",
+      participants: all_users,
+      teams: {
+        team1: team1_users,
+        team2: team2_users
+      },
+      turn_order: turn_order,
+      turn_index: 0,
+      current_turn: turn_order[0],
+      round: 1,
+      actions_queue: [],
+      guarded: {},
+      counter: {},
+      protected_by: {},
+      reply_status: reply_status
+    }
+
+    BattleState.update(battle_id, state)
+
+    team1_names = team1_users.map { |uid| (@sheet_manager.find_user(uid)["이름"] || uid) }.join(", ")
+    team2_names = team2_users.map { |uid| (@sheet_manager.find_user(uid)["이름"] || uid) }.join(", ")
+    
+    first_player = @sheet_manager.find_user(turn_order[0])
+    first_player_name = first_player["이름"] || turn_order[0]
+
+    message = "⚔️ 4:4 전투 시작!\n"
+    message += "팀1: #{team1_names}\n"
+    message += "팀2: #{team2_names}\n\n"
+    message += "선공 판정\n"
+    message += "팀1: 민첩성 #{team1_agility} + D20: #{team1_roll} = #{team1_total}\n"
+    message += "팀2: 민첩성 #{team2_agility} + D20: #{team2_roll} = #{team2_total}\n"
+    message += "#{first_team == :team1 ? '팀1' : '팀2'} 선공!\n"
+    message += "━━━━━━━━━━━━━━━━━━\n"
+    message += show_all_hp(state)
+    message += "\n━━━━━━━━━━━━━━━━━━\n\n"
+    message += "라운드 1 시작\n"
+    message += "#{first_player_name}의 차례\n"
+    message += "[공격/@타겟] [방어] [방어/@아군] [반격] [물약/크기/@아군]"
+
+    response = @client.reply(reply_status, message)
+    
+    if response && response[:id]
+      state[:thread_status] = response
+      BattleState.update(battle_id, state)
+    end
+
+    battle_id
+  end
+
+  # 전투 액션 처리 (1:1용)
   def handle_battle_action(user_id, action_type, battle_id)
     state = BattleState.get(battle_id)
     return unless state
@@ -185,19 +274,14 @@ class BattleEngine
       return
     end
 
-    case state[:type]
-    when "pvp"
-      handle_pvp_action(user_id, action_type, battle_id, state)
-    when "dummy"
-      handle_dummy_action(user_id, action_type, battle_id, state)
-    end
+    handle_pvp_action(user_id, action_type, battle_id, state)
   end
 
-  # 2:2 전투 액션 처리
-  def handle_2v2_action(user_id, action_type, target_id, battle_id, state)
+  # 2:2/4:4 전투 액션 처리
+  def handle_multi_action(user_id, action_type, target_id, battle_id, state)
     if action_type == :attack
       unless target_id
-        reply_to_thread("2:2 전투에서는 [공격/@타겟] 형식으로 타겟을 지정해야 합니다.", state)
+        reply_to_thread("팀 전투에서는 [공격/@타겟] 형식으로 타겟을 지정해야 합니다.", state)
         return
       end
       
@@ -265,8 +349,11 @@ class BattleEngine
     state[:turn_index] += 1
     BattleState.update(battle_id, state)
     
-    if state[:turn_index] >= 4
-      process_2v2_round(battle_id, state, message)
+    # 2:2는 4명, 4:4는 8명
+    total_players = state[:type] == "2v2" ? 4 : 8
+    
+    if state[:turn_index] >= total_players
+      process_multi_round(battle_id, state, message)
     else
       state[:current_turn] = state[:turn_order][state[:turn_index]]
       BattleState.update(battle_id, state)
@@ -275,14 +362,14 @@ class BattleEngine
       next_player_name = next_player["이름"] || state[:current_turn]
       
       message += "#{next_player_name}의 차례\n"
-      message += "[공격/@타겟] [방어] [방어/@아군] [반격] [물약] [도주]"
+      message += "[공격/@타겟] [방어] [방어/@아군] [반격] [물약/크기/@아군]"
       
       reply_to_thread(message, state)
     end
   end
 
-  # 2:2 라운드 처리
-  def process_2v2_round(battle_id, state, prefix_message)
+  # 2:2/4:4 라운드 처리
+  def process_multi_round(battle_id, state, prefix_message)
     message = prefix_message
     message += "\n라운드 #{state[:round]} 결과\n"
     message += "━━━━━━━━━━━━━━━━━━\n\n"
@@ -363,12 +450,12 @@ class BattleEngine
     
     message += "\n\n라운드 #{state[:round]} 시작\n"
     message += "#{first_player_name}의 차례\n"
-    message += "[공격/@타겟] [방어] [방어/@아군] [반격] [물약] [도주]"
+    message += "[공격/@타겟] [방어] [방어/@아군] [반격] [물약/크기/@아군]"
 
     reply_to_thread(message, state)
   end
 
-  # 공격 결과 계산 (2:2용)
+  # 공격 결과 계산
   def calculate_attack_result(attacker, attacker_id, defender, defender_id, state, battle_id)
     attacker_name = attacker["이름"] || attacker_id
     defender_name = defender["이름"] || defender_id
@@ -492,8 +579,6 @@ class BattleEngine
     message += "현재 체력\n"
     
     state[:participants].each do |participant_id|
-      next if participant_id.to_s.include?("허수아비")
-      
       participant = @sheet_manager.find_user(participant_id)
       next unless participant
       
@@ -505,18 +590,11 @@ class BattleEngine
       message += "#{name}: #{current_hp}/#{max_hp} #{hp_bar}\n"
     end
     
-    # 허수아비가 있으면 표시
-    if state[:type] == "dummy"
-      dummy_max_hp = DUMMY_STATS[state[:difficulty]][:hp]
-      hp_bar = generate_hp_bar(state[:dummy_hp], dummy_max_hp)
-      message += "허수아비: #{state[:dummy_hp]}/#{dummy_max_hp} #{hp_bar}\n"
-    end
-    
     message += "━━━━━━━━━━━━━━━━━━"
     message
   end
 
-  # PvP 액션 처리
+  # PvP 액션 처리 (1:1)
   def handle_pvp_action(user_id, action_type, battle_id, state)
     opponent_id = state[:participants].find { |p| p != user_id }
     
@@ -557,7 +635,7 @@ class BattleEngine
 
       message += "\n\n"
       message += "#{opponent_name}의 차례\n"
-      message += "[공격] [방어] [반격] [물약] [도주]"
+      message += "[공격] [방어] [반격] [물약/크기]"
 
       reply_to_thread(message, state)
 
@@ -567,7 +645,7 @@ class BattleEngine
       
       message = "#{user_name}이(가) 방어 태세를 취했습니다.\n\n"
       message += "#{opponent_name}의 차례\n"
-      message += "[공격] [방어] [반격] [물약] [도주]"
+      message += "[공격] [방어] [반격] [물약/크기]"
       
       state[:current_turn] = opponent_id
       BattleState.update(battle_id, state)
@@ -580,7 +658,7 @@ class BattleEngine
       
       message = "#{user_name}이(가) 반격 태세를 취했습니다.\n\n"
       message += "#{opponent_name}의 차례\n"
-      message += "[공격] [방어] [반격] [물약] [도주]"
+      message += "[공격] [방어] [반격] [물약/크기]"
       
       state[:current_turn] = opponent_id
       BattleState.update(battle_id, state)
@@ -589,147 +667,7 @@ class BattleEngine
     end
   end
 
-  # 허수아비 액션 처리
-  def handle_dummy_action(user_id, action_type, battle_id, state)
-    user = @sheet_manager.find_user(user_id)
-    user_name = user["이름"] || user_id
-    
-    difficulty = state[:difficulty]
-    dummy_stats = DUMMY_STATS[difficulty]
-
-    case action_type
-    when :attack
-      atk = (user["공격"] || 10).to_i
-      atk_roll = rand(1..20)
-      atk_total = atk + atk_roll
-      
-      def_roll = rand(1..20)
-      def_total = dummy_stats[:def] + def_roll
-      
-      damage = [atk_total - def_total, 0].max
-      state[:dummy_hp] -= damage
-      
-      message = "#{user_name}의 공격\n"
-      message += "공격: #{atk} + D20: #{atk_roll} = #{atk_total}\n\n"
-      message += "허수아비의 방어\n"
-      message += "방어: #{dummy_stats[:def]} + D20: #{def_roll} = #{def_total}\n\n"
-      
-      if damage > 0
-        message += "허수아비에게 #{damage} 피해\n"
-        message += "남은 HP: #{state[:dummy_hp]}\n"
-      else
-        message += "허수아비가 공격을 막았습니다!\n"
-      end
-      
-      message += show_all_hp(state)
-
-      if state[:dummy_hp] <= 0
-        message += "\n\n#{user_name} 승리!"
-        reply_to_thread(message, state)
-        BattleState.clear(battle_id)
-        return
-      end
-
-      # 허수아비 반격
-      dummy_atk_roll = rand(1..20)
-      dummy_atk_total = dummy_stats[:atk] + dummy_atk_roll
-      
-      user_def = (user["방어"] || 10).to_i
-      user_def_roll = rand(1..20)
-      user_def_total = user_def + user_def_roll
-      
-      counter_damage = [dummy_atk_total - user_def_total, 0].max
-      
-      message += "\n━━━━━━━━━━━━━━━━━━\n\n"
-      message += "허수아비의 반격\n"
-      message += "공격: #{dummy_stats[:atk]} + D20: #{dummy_atk_roll} = #{dummy_atk_total}\n\n"
-      message += "#{user_name}의 방어\n"
-      message += "방어: #{user_def} + D20: #{user_def_roll} = #{user_def_total}\n\n"
-      
-      if counter_damage > 0
-        current_hp = (user["HP"] || 0).to_i
-        new_hp = [current_hp - counter_damage, 0].max
-        @sheet_manager.update_user(user_id, { hp: new_hp })
-        
-        message += "#{user_name}에게 #{counter_damage} 피해\n"
-        message += "남은 HP: #{new_hp}\n"
-        
-        message += show_all_hp(state)
-
-        if new_hp <= 0
-          message += "\n\n허수아비 승리!"
-          reply_to_thread(message, state)
-          BattleState.clear(battle_id)
-          return
-        end
-      else
-        message += "#{user_name}이(가) 공격을 막았습니다!\n"
-        message += show_all_hp(state)
-      end
-
-      state[:round] += 1
-      BattleState.update(battle_id, state)
-
-      message += "\n\n"
-      message += "#{user_name}의 차례\n"
-      message += "[공격] [방어] [반격] [물약] [도주]"
-
-      reply_to_thread(message, state)
-
-    when :defend
-      state[:guarded][user_id] = true
-      BattleState.update(battle_id, state)
-      
-      # 허수아비 공격
-      dummy_atk_roll = rand(1..20)
-      dummy_atk_total = dummy_stats[:atk] + dummy_atk_roll
-      
-      user_def = (user["방어"] || 10).to_i
-      guard_roll = rand(1..20)
-      guard_total = user_def + guard_roll
-      
-      message = "#{user_name}이(가) 방어 태세!\n"
-      message += "━━━━━━━━━━━━━━━━━━\n\n"
-      message += "허수아비의 공격\n"
-      message += "공격: #{dummy_stats[:atk]} + D20: #{dummy_atk_roll} = #{dummy_atk_total}\n\n"
-      message += "#{user_name}의 방어\n"
-      message += "방어: #{user_def} + D20: #{guard_roll} = #{guard_total}\n\n"
-      
-      if guard_total >= dummy_atk_total
-        message += "#{user_name}이(가) 공격을 완벽히 막았습니다!\n"
-        message += show_all_hp(state)
-      else
-        damage = dummy_atk_total - guard_total
-        current_hp = (user["HP"] || 0).to_i
-        new_hp = [current_hp - damage, 0].max
-        @sheet_manager.update_user(user_id, { hp: new_hp })
-        
-        message += "#{user_name}에게 #{damage} 피해\n"
-        message += "남은 HP: #{new_hp}\n"
-        
-        message += show_all_hp(state)
-
-        if new_hp <= 0
-          message += "\n\n허수아비 승리!"
-          reply_to_thread(message, state)
-          BattleState.clear(battle_id)
-          return
-        end
-      end
-      
-      state[:guarded].delete(user_id)
-      state[:round] += 1
-      BattleState.update(battle_id, state)
-
-      message += "\n\n"
-      message += "#{user_name}의 차례\n"
-      message += "[공격] [방어] [반격] [물약] [도주]"
-
-      reply_to_thread(message, state)
-    end
-  end
-
-  # 공격 실행
+  # 공격 실행 (1:1용)
   def execute_attack(attacker, attacker_id, defender, defender_id, state, battle_id)
     atk = (attacker["공격"] || 10).to_i
     atk_roll = rand(1..20)
