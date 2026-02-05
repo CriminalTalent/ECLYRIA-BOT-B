@@ -5,26 +5,46 @@ $stderr.sync = true
 require 'dotenv/load'
 require 'set'
 require 'time'
+require 'openssl'
 
 require_relative 'mastodon_client'
 require_relative 'sheet_manager'
 require_relative 'command_parser'
 require_relative 'core/battle_engine'
 
-SHEET_ID = ENV['GOOGLE_SHEET_ID']
-CREDENTIALS_PATH = ENV['GOOGLE_CREDENTIALS_PATH']
-BOT_START_TIME = Time.now
+# --------------------
+# ENV
+# --------------------
+SHEET_ID          = ENV['GOOGLE_SHEET_ID']
+CREDENTIALS_PATH  = ENV['GOOGLE_CREDENTIALS_PATH']
+BOT_START_TIME    = Time.now
+
+if SHEET_ID.to_s.strip.empty? || CREDENTIALS_PATH.to_s.strip.empty?
+  puts "[오류] GOOGLE_SHEET_ID / GOOGLE_CREDENTIALS_PATH 환경변수 누락"
+  exit 1
+end
+
+if ENV['MASTODON_BASE_URL'].to_s.strip.empty? || ENV['MASTODON_TOKEN'].to_s.strip.empty?
+  puts "[오류] MASTODON_BASE_URL / MASTODON_TOKEN 환경변수 누락"
+  exit 1
+end
 
 puts "[전투봇] 실행 시작 (#{BOT_START_TIME.strftime('%H:%M:%S')})"
 
+# --------------------
+# Google Sheets
+# --------------------
 begin
   sheet_manager = SheetManager.new(SHEET_ID, CREDENTIALS_PATH)
   puts "Google Sheets 연결 성공"
 rescue => e
   puts "[Google Sheets 연결 실패] #{e.message}"
-  exit
+  exit 1
 end
 
+# --------------------
+# Mastodon
+# --------------------
 mastodon = MastodonClient.new(
   base_url: ENV['MASTODON_BASE_URL'],
   token: ENV['MASTODON_TOKEN']
@@ -42,56 +62,53 @@ MAX_GENERAL_RETRY = 3
 ssl_error_count = 0
 general_retry_count = 0
 
-# --------------------------
-# ✅ status 안전 처리 유틸
-# (stream_user가 Array/Hash 등으로 넘겨도 안전하게 Hash를 뽑아 씀)
-# --------------------------
-def pick_hash(obj)
+# --------------------
+# status 정규화 유틸
+# mastodon_client 구현에 따라 이벤트가 Array로 올 수 있음(그때 방어)
+# --------------------
+def extract_status(obj)
   return obj if obj.is_a?(Hash)
-  if obj.is_a?(Array)
-    obj.each { |x| return x if x.is_a?(Hash) }
-  end
-  nil
-end
 
-def hget(h, key)
-  return nil unless h.is_a?(Hash)
-  h[key] || h[key.to_s]
+  # 예: [event, payload] 형태로 오는 경우
+  if obj.is_a?(Array)
+    payload = obj[1]
+    return payload if payload.is_a?(Hash)
+  end
+
+  nil
 end
 
 loop do
   begin
     puts "[마스토돈] user 스트림 구독 시작..."
 
-    mastodon.stream_user do |status|
+    mastodon.stream_user do |raw|
       begin
         ssl_error_count = 0
         general_retry_count = 0
 
-        # ✅ status 정규화 (Hash가 아니면 스킵)
-        s = pick_hash(status)
-        unless s
-          puts "[WARN] status가 Hash가 아님: #{status.class} #{status.inspect[0..120]}"
+        status = extract_status(raw)
+        unless status
+          puts "[스트리밍] status 형식이 Hash가 아님(스킵): #{raw.class}"
           next
         end
 
-        mention_id = hget(s, :id)
-        next if mention_id.nil? || processed.include?(mention_id)
+        mention_id = status[:id] || status['id']
+        next unless mention_id
+        next if processed.include?(mention_id)
 
-        created_at = hget(s, :created_at)
+        created_at = status[:created_at] || status['created_at']
         if created_at
-          created = Time.parse(created_at) rescue nil
+          created = Time.parse(created_at.to_s) rescue nil
           next if created && created < BOT_START_TIME
         end
 
         processed.add(mention_id)
 
-        acct_hash = hget(s, :account)
-        sender = hget(acct_hash, :acct) || "unknown"
-        puts "[스트리밍] #{mention_id} - @#{sender}"
+        acct = (status.dig(:account, :acct) || status.dig('account', 'acct') || "unknown")
+        puts "[스트리밍] #{mention_id} - @#{acct}"
 
-        # ✅ 파서에는 “정상 status Hash”만 전달
-        parser.parse(s)
+        parser.parse(status)
 
       rescue => e
         puts "[에러] 멘션 처리 오류: #{e.class}: #{e.message}"
