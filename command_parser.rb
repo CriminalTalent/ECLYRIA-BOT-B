@@ -82,6 +82,22 @@ class CommandParser
       return
     end
 
+    # 허수아비 전투 (난이도별)
+    if text =~ /\[허수아비(?:\/(쉬움|보통|어려움))?\]/i
+      difficulty_map = {
+        "쉬움" => :easy,
+        "보통" => :normal,
+        "어려움" => :hard
+      }
+      difficulty = $1 ? difficulty_map[$1] : :normal
+      
+      # BattleEngine에 허수아비 전투 시작 메서드 필요
+      require_relative 'core/battle_engine'
+      engine = BattleEngine.new(@mastodon_client)
+      engine.start_dummy_battle(user_id, reply_status, difficulty)
+      return
+    end
+
     # 1:1 전투 개시
     # [전투/@A] 또는 [전투개시/@A]
     if text =~ /\[전투(?:개시)?\/(@?\w+)\]/i
@@ -209,7 +225,7 @@ class CommandParser
   end
 
   def handle_gm_end_battle(gm_id, participants, reply_status)
-    require_relative 'core/battle_state'
+    require_relative 'state/battle_state'
     
     # 참가자들이 포함된 전투 찾기
     battle_id = BattleState.find_battle_by_participants(participants)
@@ -218,8 +234,8 @@ class CommandParser
       battle = BattleState.get(battle_id)
       BattleState.clear(battle_id)
       
-      msg = "#{gm_id}님이 전투를 중단했습니다.\n"
-      msg += "참가자: #{participants.join(', ')}"
+      msg = "@#{gm_id}님이 전투를 중단했습니다.\n"
+      msg += "참가자: #{participants.map { |p| "@#{p}" }.join(', ')}"
       
       @mastodon_client.reply(reply_status, msg)
     else
