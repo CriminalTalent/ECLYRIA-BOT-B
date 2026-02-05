@@ -36,6 +36,19 @@ class BattleState
       end
     end
     
+    # 참가자들로 전투 ID 찾기
+    def find_battle_by_participants(participant_list)
+      @mutex.synchronize do
+        @battles.each do |battle_id, battle|
+          # 참가자 목록이 일치하는지 확인
+          if battle[:participants] && participant_list.all? { |p| battle[:participants].include?(p) }
+            return battle_id
+          end
+        end
+        nil
+      end
+    end
+    
     # 전투 ID로 battle_id 조회
     def find_battle_id_by_thread(thread_ts)
       battle = find_by_thread(thread_ts)
