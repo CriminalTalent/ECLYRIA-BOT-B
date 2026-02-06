@@ -1,7 +1,7 @@
 # core/battle_engine.rb
 require 'securerandom'
 
-require_relative '../state/battle_state'
+require_relative 'battle_state'
 require_relative '../sheet_manager'
 
 class BattleEngine
@@ -28,9 +28,9 @@ class BattleEngine
     
     # visibility 가져오기
     visibility = get_visibility(reply_status)
+    status_uri = get_status_uri(reply_status)
     
     # 전투 상태 생성
-    status_uri = get_status_uri(reply_status)
     battle_id = BattleState.create(
       participants,
       "pvp",
@@ -41,19 +41,23 @@ class BattleEngine
     
     state = BattleState.get(battle_id)
     state[:current_turn] = first_attacker
+    state[:original_status] = reply_status
     BattleState.update(battle_id, state)
     
     user_name = user["이름"] || user_id
     opponent_name = opponent["이름"] || opponent_id
     
-    message = "⚔️ 전투 시작!\n\n"
+    # 참가자 태그
+    message = "@#{user_id} @#{opponent_id}\n\n"
+    message += "전투 시작!\n\n"
     message += "#{user_name} (민첩: #{user_dex} + #{user_init - user_dex}) = #{user_init}\n"
     message += "#{opponent_name} (민첩: #{opponent_dex} + #{opponent_init - opponent_dex}) = #{opponent_init}\n\n"
     message += "#{first_attacker == user_id ? user_name : opponent_name}의 선공!\n\n"
     message += show_all_hp(state)
-    message += "\n\n[공격] [방어] [반격] [물약사용/크기]"
+    message += "\n\n@#{first_attacker}\n"
+    message += "[공격] [방어] [반격] [물약사용/크기]"
     
-    reply_to_thread(message, state, reply_status)
+    reply_to_status(reply_status, message, visibility)
   end
 
   # 2:2 전투 시작
@@ -89,8 +93,8 @@ class BattleEngine
     
     # visibility 가져오기
     visibility = get_visibility(reply_status)
-    
     status_uri = get_status_uri(reply_status)
+    
     battle_id = BattleState.create(
       participants,
       "2v2",
@@ -103,17 +107,21 @@ class BattleEngine
     state[:teams] = { team1: team1, team2: team2 }
     state[:turn_order] = turn_order
     state[:current_turn] = turn_order.first
+    state[:original_status] = reply_status
     BattleState.update(battle_id, state)
     
-    message = "⚔️ 2:2 전투 시작!\n\n"
+    # 참가자 태그
+    tags = participants.map { |p| "@#{p}" }.join(" ")
+    message = "#{tags}\n\n"
+    message += "2:2 전투 시작!\n\n"
     message += "팀1: #{team1.join(', ')}\n"
     message += "팀2: #{team2.join(', ')}\n\n"
     message += "턴 순서: #{turn_order.join(' → ')}\n\n"
     message += show_all_hp(state)
-    message += "\n\n#{turn_order.first}의 차례\n"
+    message += "\n\n@#{turn_order.first}\n"
     message += "[공격/@타겟] [방어/@아군] [반격] [물약사용/크기/@아군]"
     
-    reply_to_thread(message, state, reply_status)
+    reply_to_status(reply_status, message, visibility)
   end
 
   # 4:4 전투 시작
@@ -147,8 +155,8 @@ class BattleEngine
     
     # visibility 가져오기
     visibility = get_visibility(reply_status)
-    
     status_uri = get_status_uri(reply_status)
+    
     battle_id = BattleState.create(
       participants,
       "4v4",
@@ -161,17 +169,21 @@ class BattleEngine
     state[:teams] = { team1: team1, team2: team2 }
     state[:turn_order] = turn_order
     state[:current_turn] = turn_order.first
+    state[:original_status] = reply_status
     BattleState.update(battle_id, state)
     
-    message = "⚔️ 4:4 전투 시작!\n\n"
+    # 참가자 태그
+    tags = participants.map { |p| "@#{p}" }.join(" ")
+    message = "#{tags}\n\n"
+    message += "4:4 전투 시작!\n\n"
     message += "팀1: #{team1.join(', ')}\n"
     message += "팀2: #{team2.join(', ')}\n\n"
     message += "턴 순서: #{turn_order.join(' → ')}\n\n"
     message += show_all_hp(state)
-    message += "\n\n#{turn_order.first}의 차례\n"
+    message += "\n\n@#{turn_order.first}\n"
     message += "[공격/@타겟] [방어/@아군] [반격] [물약사용/크기/@아군]"
     
-    reply_to_thread(message, state, reply_status)
+    reply_to_status(reply_status, message, visibility)
   end
 
   # 1:1 액션 처리
@@ -187,6 +199,9 @@ class BattleEngine
     user = @sheet_manager.find_user(user_id)
     user_name = user["이름"] || user_id
     
+    # 참가자 태그
+    tags = state[:participants].map { |p| "@#{p}" }.join(" ")
+    
     case action_type
     when :attack
       target = @sheet_manager.find_user(target_id)
@@ -196,14 +211,16 @@ class BattleEngine
       target_team = state[:teams][:team1].include?(target_id) ? :team1 : :team2
       
       if user_team == target_team
-        message = "#{user_name}님, 아군을 공격할 수 없습니다!"
-        reply_to_thread(message, state, build_status_from_state(state))
+        message = "#{tags}\n\n"
+        message += "#{user_name}님, 아군을 공격할 수 없습니다!"
+        reply_to_state(state, message)
         return
       end
       
       result = execute_attack(user, user_id, target, target_id, state, battle_id)
       
-      message = "#{user_name}의 공격 → #{target["이름"] || target_id}\n"
+      message = "#{tags}\n\n"
+      message += "#{user_name}의 공격 → #{target["이름"] || target_id}\n"
       message += "공격: #{result[:atk]} + D20: #{result[:atk_roll]} = #{result[:atk_total]}\n"
       message += "방어: #{result[:def]} + D20: #{result[:def_roll]} = #{result[:def_total]}\n\n"
       
@@ -227,7 +244,7 @@ class BattleEngine
         unless alive
           winner_team = target_team == :team1 ? :team2 : :team1
           message += "\n\n#{winner_team == :team1 ? '팀1' : '팀2'} 승리!"
-          reply_to_thread(message, state, build_status_from_state(state))
+          reply_to_state(state, message)
           BattleState.clear(battle_id)
           return
         end
@@ -237,10 +254,10 @@ class BattleEngine
       next_turn_multi(state, battle_id)
       current_user = @sheet_manager.find_user(state[:current_turn])
       
-      message += "\n\n#{current_user["이름"] || state[:current_turn]}의 차례\n"
+      message += "\n\n@#{state[:current_turn]}\n"
       message += "[공격/@타겟] [방어/@아군] [반격] [물약사용/크기/@아군]"
       
-      reply_to_thread(message, state, build_status_from_state(state))
+      reply_to_state(state, message)
       
     when :defend
       state[:guarded][user_id] = true
@@ -249,11 +266,12 @@ class BattleEngine
       next_turn_multi(state, battle_id)
       current_user = @sheet_manager.find_user(state[:current_turn])
       
-      message = "#{user_name}이(가) 방어 태세!\n\n"
-      message += "#{current_user["이름"] || state[:current_turn]}의 차례\n"
+      message = "#{tags}\n\n"
+      message += "#{user_name}이(가) 방어 태세!\n\n"
+      message += "@#{state[:current_turn]}\n"
       message += "[공격/@타겟] [방어/@아군] [반격] [물약사용/크기/@아군]"
       
-      reply_to_thread(message, state, build_status_from_state(state))
+      reply_to_state(state, message)
       
     when :defend_target
       target = @sheet_manager.find_user(target_id)
@@ -263,8 +281,9 @@ class BattleEngine
       target_team = state[:teams][:team1].include?(target_id) ? :team1 : :team2
       
       if user_team != target_team
-        message = "#{user_name}님, 아군만 방어할 수 있습니다!"
-        reply_to_thread(message, state, build_status_from_state(state))
+        message = "#{tags}\n\n"
+        message += "#{user_name}님, 아군만 방어할 수 있습니다!"
+        reply_to_state(state, message)
         return
       end
       
@@ -274,30 +293,32 @@ class BattleEngine
       next_turn_multi(state, battle_id)
       current_user = @sheet_manager.find_user(state[:current_turn])
       
-      message = "#{user_name}이(가) #{target["이름"] || target_id}을(를) 방어!\n\n"
-      message += "#{current_user["이름"] || state[:current_turn]}의 차례\n"
+      message = "#{tags}\n\n"
+      message += "#{user_name}이(가) #{target["이름"] || target_id}을(를) 방어!\n\n"
+      message += "@#{state[:current_turn]}\n"
       message += "[공격/@타겟] [방어/@아군] [반격] [물약사용/크기/@아군]"
       
-      reply_to_thread(message, state, build_status_from_state(state))
+      reply_to_state(state, message)
       
     when :counter
       result = execute_counter(user, user_id, state, battle_id)
       
+      message = "#{tags}\n\n"
       if result[:triggered]
-        message = "#{user_name}의 반격!\n"
+        message += "#{user_name}의 반격!\n"
         message += "반격 피해: #{result[:counter_damage]}\n"
         message += show_all_hp(state)
       else
-        message = "#{user_name}이(가) 반격 태세를 취했습니다."
+        message += "#{user_name}이(가) 반격 태세를 취했습니다."
       end
       
       next_turn_multi(state, battle_id)
       current_user = @sheet_manager.find_user(state[:current_turn])
       
-      message += "\n\n#{current_user["이름"] || state[:current_turn]}의 차례\n"
+      message += "\n\n@#{state[:current_turn]}\n"
       message += "[공격/@타겟] [방어/@아군] [반격] [물약사용/크기/@아군]"
       
-      reply_to_thread(message, state, build_status_from_state(state))
+      reply_to_state(state, message)
     end
   end
 
@@ -411,12 +432,16 @@ class BattleEngine
     
     user_name = user["이름"] || user_id
     opponent_name = opponent["이름"] || opponent_id
+    
+    # 참가자 태그
+    tags = "@#{user_id} @#{opponent_id}\n\n"
 
     case action_type
     when :attack
       result = execute_attack(user, user_id, opponent, opponent_id, state, battle_id)
       
-      message = "#{user_name}의 공격\n"
+      message = "#{tags}"
+      message += "#{user_name}의 공격\n"
       message += "공격: #{result[:atk]} + D20: #{result[:atk_roll]} = #{result[:atk_total]}\n\n"
       message += "#{opponent_name}의 방어\n"
       message += "방어: #{result[:def]} + D20: #{result[:def_roll]} = #{result[:def_total]}\n\n"
@@ -432,7 +457,7 @@ class BattleEngine
 
       if result[:new_hp] <= 0
         message += "\n\n#{user_name} 승리!"
-        reply_to_thread(message, state, build_status_from_state(state))
+        reply_to_state(state, message)
         BattleState.clear(battle_id)
         return
       end
@@ -441,38 +466,39 @@ class BattleEngine
       state[:round] += 1
       BattleState.update(battle_id, state)
 
-      message += "\n\n"
-      message += "#{opponent_name}의 차례\n"
+      message += "\n\n@#{opponent_id}\n"
       message += "[공격] [방어] [반격] [물약사용/크기]"
 
-      reply_to_thread(message, state, build_status_from_state(state))
+      reply_to_state(state, message)
 
     when :defend
       state[:guarded][user_id] = true
       BattleState.update(battle_id, state)
       
-      message = "#{user_name}이(가) 방어 태세를 취했습니다.\n\n"
-      message += "#{opponent_name}의 차례\n"
+      message = "#{tags}"
+      message += "#{user_name}이(가) 방어 태세를 취했습니다.\n\n"
+      message += "@#{opponent_id}\n"
       message += "[공격] [방어] [반격] [물약사용/크기]"
       
       state[:current_turn] = opponent_id
       state[:round] += 1
       BattleState.update(battle_id, state)
 
-      reply_to_thread(message, state, build_status_from_state(state))
+      reply_to_state(state, message)
 
     when :counter
       result = execute_counter(user, user_id, state, battle_id)
       
-      message = "#{user_name}이(가) 반격 태세를 취했습니다.\n\n"
-      message += "#{opponent_name}의 차례\n"
+      message = "#{tags}"
+      message += "#{user_name}이(가) 반격 태세를 취했습니다.\n\n"
+      message += "@#{opponent_id}\n"
       message += "[공격] [방어] [반격] [물약사용/크기]"
       
       state[:current_turn] = opponent_id
       state[:round] += 1
       BattleState.update(battle_id, state)
 
-      reply_to_thread(message, state, build_status_from_state(state))
+      reply_to_state(state, message)
     end
   end
 
@@ -505,8 +531,10 @@ class BattleEngine
   def get_visibility(status)
     if status.respond_to?(:visibility)
       status.visibility
-    else
+    elsif status.is_a?(Hash)
       status['visibility'] || status[:visibility] || 'public'
+    else
+      'public'
     end
   end
 
@@ -514,28 +542,35 @@ class BattleEngine
   def get_status_uri(status)
     if status.respond_to?(:uri)
       status.uri
-    else
+    elsif status.respond_to?(:id)
+      status.id.to_s
+    elsif status.is_a?(Hash)
       status['uri'] || status[:uri] || status['id'] || status[:id]
+    else
+      nil
     end
   end
 
-  # State에서 Status 객체 생성
-  def build_status_from_state(state)
-    {
-      'uri' => state[:thread_ts],
-      'visibility' => state[:visibility]
-    }
+  # Status에 응답
+  def reply_to_status(status, message, visibility = nil)
+    use_visibility = visibility || get_visibility(status)
+    @client.reply(status, message, visibility: use_visibility)
   end
 
-  # 스레드 응답
-  def reply_to_thread(message, state, original_status)
+  # State에서 응답
+  def reply_to_state(state, message)
+    original_status = state[:original_status]
     visibility = state[:visibility] || 'public'
-    status = {
-      'uri' => state[:thread_ts],
-      'id' => state[:thread_ts],
-      'visibility' => visibility
-    }
     
-    @client.reply(status, message, visibility: visibility)
+    if original_status
+      reply_to_status(original_status, message, visibility)
+    else
+      # fallback: 해시로 생성
+      status = {
+        'id' => state[:thread_ts],
+        'visibility' => visibility
+      }
+      @client.reply(status, message, visibility: visibility)
+    end
   end
 end
