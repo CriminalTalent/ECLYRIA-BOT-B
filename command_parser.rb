@@ -1,5 +1,5 @@
 # command_parser.rb
-# 이모지 제거 버전
+# 긴급 수정 버전 - 명령어 파싱 오류 해결
 
 require_relative 'commands/battle_command'
 require_relative 'commands/potion_command'
@@ -23,10 +23,12 @@ class CommandParser
     # HTML 태그 제거 및 정리
     clean_content = content.gsub(/<[^>]*>/, '').strip
     
-    # 봇 멘션 제거 (@battle 등)
-    clean_content = clean_content.gsub(/@\w+\s*/, '').strip
+    # 봇 멘션만 제거 (@Battle, @battle 등) - 명령어 내의 @는 보존
+    clean_content = clean_content.gsub(/@Battle\s*/i, '').strip
     
-    puts "[CommandParser] 처리: #{sender_id} - #{clean_content[0..50]}"
+    puts "[CommandParser] 원본: #{content[0..100]}"
+    puts "[CommandParser] 정리된 내용: #{clean_content[0..100]}"
+    puts "[CommandParser] 처리: #{sender_id} - #{clean_content}"
     
     begin
       # 전투 관련 명령어
@@ -67,9 +69,17 @@ class CommandParser
   private
 
   def handle_battle_commands(content, status, sender_id)
-    # 1:1 전투 개시
-    if content =~ /\[전투개시\/(@?\w+)\]/i
+    puts "[CommandParser] 전투 명령어 체크: #{content}"
+    
+    # 1:1 전투 개시 - 더 명확한 정규식
+    if content =~ /\[전투개시[\/\s]*(@?\w+)\]/i
       opponent_id = $1.gsub('@', '').strip
+      puts "[CommandParser] 1v1 전투 대상: #{opponent_id}"
+      
+      if opponent_id.empty?
+        @client.reply(status, "@#{sender_id} 전투 상대를 지정해주세요. 예: [전투개시/@상대방]")
+        return true
+      end
       
       if opponent_id == sender_id
         @client.reply(status, "@#{sender_id} 자신과는 전투할 수 없습니다!")
@@ -80,14 +90,18 @@ class CommandParser
       return true
     end
 
-    # 2:2 팀전투 개시
-    if content =~ /\[전투개시\/((?:@?\w+\/){3}@?\w+)\]/i ||
-       content =~ /\[팀전투\/((?:@?\w+\/){3}@?\w+)\]/i
+    # 2:2 팀전투 개시 - 더 유연한 정규식
+    if content =~ /\[전투개시[\/\s]*((?:@?\w+[\/\s]*){3}@?\w+)\]/i ||
+       content =~ /\[팀전투[\/\s]*((?:@?\w+[\/\s]*){3}@?\w+)\]/i
       participants_text = $1
-      participants = participants_text.split('/').map { |p| p.gsub('@', '').strip }.reject(&:empty?)
+      puts "[CommandParser] 팀전투 참가자 텍스트: #{participants_text}"
+      
+      # 다양한 구분자로 분할
+      participants = participants_text.split(/[\/\s]+/).map { |p| p.gsub('@', '').strip }.reject(&:empty?)
+      puts "[CommandParser] 팀전투 참가자 목록: #{participants}"
       
       if participants.length != 4
-        @client.reply(status, "@#{sender_id} 팀전투는 정확히 4명이 필요합니다.")
+        @client.reply(status, "@#{sender_id} 팀전투는 정확히 4명이 필요합니다. 현재: #{participants.length}명")
         return true
       end
       
@@ -101,9 +115,9 @@ class CommandParser
     end
 
     # 4:4 대규모전투 개시
-    if content =~ /\[대규모전투\/((?:@?\w+\/){7}@?\w+)\]/i
+    if content =~ /\[대규모전투[\/\s]*((?:@?\w+[\/\s]*){7}@?\w+)\]/i
       participants_text = $1
-      participants = participants_text.split('/').map { |p| p.gsub('@', '').strip }.reject(&:empty?)
+      participants = participants_text.split(/[\/\s]+/).map { |p| p.gsub('@', '').strip }.reject(&:empty?)
       
       if participants.length != 8
         @client.reply(status, "@#{sender_id} 대규모전투는 정확히 8명이 필요합니다.")
@@ -120,20 +134,27 @@ class CommandParser
       return true
     end
 
+    # 허수아비 전투
+    if content =~ /\[허수아비\s+(상|중|하)\]/i
+      difficulty = $1
+      # TODO: 허수아비 전투 구현 필요
+      @client.reply(status, "@#{sender_id} 허수아비 전투는 아직 구현되지 않았습니다.")
+      return true
+    end
 
     false
   end
 
   def handle_battle_actions(content, status, sender_id)
     # 공격
-    if content =~ /\[공격(?:\/(@?\w+))?\]/i
+    if content =~ /\[공격(?:[\/\s]*(@?\w+))?\]/i
       target = $1 ? $1.gsub('@', '').strip : nil
       @battle_command.attack(sender_id, target, status)
       return true
     end
 
     # 방어
-    if content =~ /\[방어(?:\/(@?\w+))?\]/i
+    if content =~ /\[방어(?:[\/\s]*(@?\w+))?\]/i
       target = $1 ? $1.gsub('@', '').strip : nil
       @battle_command.defend(sender_id, target, status)
       return true
@@ -146,7 +167,7 @@ class CommandParser
     end
 
     # 물약사용 (전투 중)
-    if content =~ /\[물약사용(?:\/(소형|중형|대형))?(?:\/(@?\w+))?\]/i
+    if content =~ /\[물약사용(?:[\/\s]*(소형|중형|대형))?(?:[\/\s]*(@?\w+))?\]/i
       potion_size = $1 || "소형"
       target = $2 ? $2.gsub('@', '').strip : nil
       @battle_command.use_potion(sender_id, potion_size, target, status)
