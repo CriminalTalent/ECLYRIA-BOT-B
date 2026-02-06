@@ -70,15 +70,36 @@ class BattleEngine
   def start_2v2_battle(team1, team2, reply_status)
     participants = team1 + team2
     
-    # 팀별 민첩 계산하여 턴 순서 결정
-    all_init = participants.map do |p|
+    # 팀별 민첩 합산 후 비교
+    team1_dex_sum = team1.sum do |p|
       user = @sheet_manager.find_user(p)
-      dex = (user["민첩성"] || 10).to_i
-      init = dex + rand(1..20)
-      [p, init]
+      (user["민첩성"] || 10).to_i
     end
     
-    turn_order = all_init.sort_by { |_, init| -init }.map { |id, _| id }
+    team2_dex_sum = team2.sum do |p|
+      user = @sheet_manager.find_user(p)
+      (user["민첩성"] || 10).to_i
+    end
+    
+    team1_init = team1_dex_sum + rand(1..20)
+    team2_init = team2_dex_sum + rand(1..20)
+    
+    # 선공 팀 결정
+    first_team = team1_init >= team2_init ? team1 : team2
+    second_team = first_team == team1 ? team2 : team1
+    
+    # 각 팀 내에서 민첩 순서대로 정렬
+    first_team_sorted = first_team.sort_by do |p|
+      user = @sheet_manager.find_user(p)
+      -(user["민첩성"] || 10).to_i
+    end
+    
+    second_team_sorted = second_team.sort_by do |p|
+      user = @sheet_manager.find_user(p)
+      -(user["민첩성"] || 10).to_i
+    end
+    
+    turn_order = first_team_sorted + second_team_sorted
     
     # visibility 가져오기
     visibility = get_visibility(reply_status)
@@ -97,6 +118,7 @@ class BattleEngine
     state[:turn_order] = turn_order
     state[:current_turn] = turn_order.first
     state[:original_status] = reply_status
+    state[:protect] = {}  # 대리 방어 저장
     BattleState.update(battle_id, state)
     
     # 참가자 태그
@@ -119,15 +141,36 @@ class BattleEngine
   def start_4v4_battle(team1, team2, reply_status)
     participants = team1 + team2
     
-    # 팀별 민첩 계산하여 턴 순서 결정
-    all_init = participants.map do |p|
+    # 팀별 민첩 합산 후 비교
+    team1_dex_sum = team1.sum do |p|
       user = @sheet_manager.find_user(p)
-      dex = (user["민첩성"] || 10).to_i
-      init = dex + rand(1..20)
-      [p, init]
+      (user["민첩성"] || 10).to_i
     end
     
-    turn_order = all_init.sort_by { |_, init| -init }.map { |id, _| id }
+    team2_dex_sum = team2.sum do |p|
+      user = @sheet_manager.find_user(p)
+      (user["민첩성"] || 10).to_i
+    end
+    
+    team1_init = team1_dex_sum + rand(1..20)
+    team2_init = team2_dex_sum + rand(1..20)
+    
+    # 선공 팀 결정
+    first_team = team1_init >= team2_init ? team1 : team2
+    second_team = first_team == team1 ? team2 : team1
+    
+    # 각 팀 내에서 민첩 순서대로 정렬
+    first_team_sorted = first_team.sort_by do |p|
+      user = @sheet_manager.find_user(p)
+      -(user["민첩성"] || 10).to_i
+    end
+    
+    second_team_sorted = second_team.sort_by do |p|
+      user = @sheet_manager.find_user(p)
+      -(user["민첩성"] || 10).to_i
+    end
+    
+    turn_order = first_team_sorted + second_team_sorted
     
     # visibility 가져오기
     visibility = get_visibility(reply_status)
@@ -146,6 +189,7 @@ class BattleEngine
     state[:turn_order] = turn_order
     state[:current_turn] = turn_order.first
     state[:original_status] = reply_status
+    state[:protect] = {}  # 대리 방어 저장
     BattleState.update(battle_id, state)
     
     # 참가자 태그
@@ -239,7 +283,7 @@ class BattleEngine
 
   private
 
-  # 라운드 처리 (우선순위: 물약 > 반격 > 방어 > 공격)
+  # 라운드 처리 (우선순위: 물약 > 반격 설정 > 방어 > 공격+반격 판정)
   def process_round(state, battle_id)
     actions = state[:actions]
     messages = []
@@ -253,29 +297,32 @@ class BattleEngine
       messages << result if result
     end
     
-    # 우선순위 2: 반격
+    # 우선순위 2: 반격 태세 설정
     counter_actions = actions.select { |_, action| action[:type] == :counter }
     counter_actions.each do |user_id, action|
-      user = @sheet_manager.find_user(user_id)
       state[:counter_stance] ||= {}
       state[:counter_stance][user_id] = true
       messages << "#{get_user_name(user_id)}이(가) 반격 태세!"
     end
     
-    # 우선순위 3: 방어
+    # 우선순위 3: 방어 태세 / 대리 방어
     defend_actions = actions.select { |_, action| action[:type] == :defend }
     defend_actions.each do |user_id, action|
-      target_id = action[:target] || user_id
-      state[:guarded][target_id] = true
+      target_id = action[:target]
       
-      if target_id == user_id
-        messages << "#{get_user_name(user_id)}이(가) 방어 태세!"
+      if target_id && target_id != user_id
+        # 대리 방어 (팀전)
+        state[:protect] ||= {}
+        state[:protect][target_id] = user_id
+        messages << "#{get_user_name(user_id)}이(가) #{get_user_name(target_id)}을(를) 대리 방어!"
       else
-        messages << "#{get_user_name(user_id)}이(가) #{get_user_name(target_id)}을(를) 방어!"
+        # 자신 방어
+        state[:guarded][user_id] = true
+        messages << "#{get_user_name(user_id)}이(가) 방어 태세!"
       end
     end
     
-    # 우선순위 4: 공격 (턴 순서대로)
+    # 우선순위 4: 공격 (턴 순서대로) + 반격 판정
     attack_actions = actions.select { |_, action| action[:type] == :attack }
     turn_order = state[:turn_order] || state[:participants]
     
@@ -303,19 +350,59 @@ class BattleEngine
         end
       end
       
-      result = execute_attack(attacker, user_id, defender, target_id, state, battle_id)
+      # 대리 방어 확인
+      actual_defender_id = target_id
+      actual_defender = defender
       
-      attack_msg = "#{get_user_name(user_id)}의 공격 → #{get_user_name(target_id)}\n"
-      attack_msg += "공격: #{result[:atk]} + D20: #{result[:atk_roll]} = #{result[:atk_total]}\n"
-      attack_msg += "방어: #{result[:def]} + D20: #{result[:def_roll]} = #{result[:def_total]}\n"
+      if state[:protect] && state[:protect][target_id]
+        protector_id = state[:protect][target_id]
+        protector = @sheet_manager.find_user(protector_id)
+        
+        if (protector["HP"] || 0).to_i > 0
+          actual_defender_id = protector_id
+          actual_defender = protector
+          messages << "#{get_user_name(protector_id)}이(가) #{get_user_name(target_id)}을(를) 대신 방어!"
+        end
+      end
+      
+      # 공격 실행
+      result = execute_attack(attacker, user_id, actual_defender, actual_defender_id, state, battle_id)
+      
+      attack_msg = "#{get_user_name(user_id)}의 공격 → #{get_user_name(actual_defender_id)}\n"
+      attack_msg += "공격: #{result[:atk]} + D20(#{result[:atk_roll]}) = #{result[:atk_total]}"
+      attack_msg += " [치명타!]" if result[:is_crit]
+      attack_msg += "\n"
+      attack_msg += "방어: #{result[:def]} + D20(#{result[:def_roll]})"
+      attack_msg += " + D20(#{result[:def_bonus]})" if result[:def_bonus] > 0
+      attack_msg += " = #{result[:def_total]}\n"
       
       if result[:damage] > 0
-        attack_msg += "#{result[:damage]} 피해! (HP: #{result[:new_hp]})"
+        attack_msg += "#{result[:damage]} 피해! (HP: #{result[:old_hp]} → #{result[:new_hp]})"
       else
         attack_msg += "공격 실패!"
       end
       
       messages << attack_msg
+      
+      # 반격 판정 (피해자가 반격 태세였다면)
+      if state[:counter_stance] && state[:counter_stance][actual_defender_id] && result[:damage] > 0
+        counter_result = execute_counter(actual_defender, actual_defender_id, attacker, user_id, result[:atk_total], state, battle_id)
+        
+        counter_msg = "\n#{get_user_name(actual_defender_id)}의 반격 판정!\n"
+        counter_msg += "반격: #{counter_result[:counter_atk]} + D20(#{counter_result[:counter_roll]}) = #{counter_result[:counter_total]}\n"
+        counter_msg += "공격력: #{result[:atk_total]}\n"
+        
+        if counter_result[:success]
+          counter_msg += "반격 성공! #{counter_result[:counter_damage]} 피해! (HP: #{counter_result[:old_hp]} → #{counter_result[:new_hp]})"
+        else
+          counter_msg += "반격 실패..."
+        end
+        
+        messages << counter_msg
+        
+        # 반격 태세 해제
+        state[:counter_stance].delete(actual_defender_id)
+      end
     end
     
     # 라운드 결과 출력
@@ -333,6 +420,8 @@ class BattleEngine
     state[:round] += 1
     state[:actions] = {}
     state[:guarded] = {}
+    state[:counter_stance] = {}
+    state[:protect] = {}
     
     # 첫 번째 살아있는 플레이어부터 시작
     turn_order = state[:turn_order] || state[:participants]
@@ -422,25 +511,27 @@ class BattleEngine
     
     atk_roll = rand(1..20)
     def_roll = rand(1..20)
+    def_bonus = 0
     
-    # 치명타
-    crit_chance = [luck * 2, 50].min
+    # 치명타 (행운 2당 5%, 최대 50%)
+    crit_chance = [(luck / 2.0 * 5).to_i, 50].min
     is_crit = rand(1..100) <= crit_chance
     
     atk_total = atk + atk_roll
-    atk_total = (atk_total * 1.5).to_i if is_crit
     
-    # 방어 태세 확인
+    # 방어 태세 확인 (D20 보너스 추가)
     if state[:guarded][defender_id]
-      def_roll += 5
+      def_bonus = rand(1..20)
     end
     
-    def_total = def_stat + def_roll
+    def_total = def_stat + def_roll + def_bonus
     
-    damage = [atk_total - def_total, 0].max
+    # 치명타 적용 (데미지에)
+    base_damage = [atk_total - def_total, 0].max
+    damage = is_crit ? (base_damage * 1.5).to_i : base_damage
     
-    current_hp = (defender["HP"] || 100).to_i
-    new_hp = [current_hp - damage, 0].max
+    old_hp = (defender["HP"] || 100).to_i
+    new_hp = [old_hp - damage, 0].max
     
     @sheet_manager.update_user(defender_id, { "HP" => new_hp })
     
@@ -450,11 +541,47 @@ class BattleEngine
       atk_total: atk_total,
       def: def_stat,
       def_roll: def_roll,
+      def_bonus: def_bonus,
       def_total: def_total,
       damage: damage,
+      old_hp: old_hp,
       new_hp: new_hp,
       is_crit: is_crit
     }
+  end
+
+  # 반격 실행
+  def execute_counter(counter_user, counter_id, attacker, attacker_id, attack_total, state, battle_id)
+    counter_atk = (counter_user["공격"] || 10).to_i
+    counter_roll = rand(1..20)
+    counter_total = counter_atk + counter_roll
+    
+    success = counter_total > attack_total
+    
+    if success
+      counter_damage = counter_total - attack_total
+      old_hp = (attacker["HP"] || 100).to_i
+      new_hp = [old_hp - counter_damage, 0].max
+      
+      @sheet_manager.update_user(attacker_id, { "HP" => new_hp })
+      
+      {
+        success: true,
+        counter_atk: counter_atk,
+        counter_roll: counter_roll,
+        counter_total: counter_total,
+        counter_damage: counter_damage,
+        old_hp: old_hp,
+        new_hp: new_hp
+      }
+    else
+      {
+        success: false,
+        counter_atk: counter_atk,
+        counter_roll: counter_roll,
+        counter_total: counter_total
+      }
+    end
   end
 
   # 물약 사용 실행
