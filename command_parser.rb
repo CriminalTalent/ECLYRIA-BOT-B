@@ -1,5 +1,5 @@
 # command_parser.rb
-# 긴급 수정 버전 - 명령어 파싱 오류 해결
+# 모든 기능 포함 완전 버전
 
 require_relative 'commands/battle_command'
 require_relative 'commands/potion_command'
@@ -31,6 +31,16 @@ class CommandParser
     puts "[CommandParser] 처리: #{sender_id} - #{clean_content}"
     
     begin
+      # 체력 확인 명령어 (우선 처리)
+      if handle_hp_check_commands(clean_content, status, sender_id)
+        return
+      end
+      
+      # 전투 중단 명령어
+      if handle_battle_stop_commands(clean_content, status, sender_id)
+        return
+      end
+      
       # 전투 관련 명령어
       if handle_battle_commands(clean_content, status, sender_id)
         return
@@ -51,11 +61,6 @@ class CommandParser
         return
       end
       
-      # 도움말
-      if handle_help_commands(clean_content, status, sender_id)
-        return
-      end
-      
       # 인식되지 않은 명령어
       puts "[CommandParser] 인식되지 않은 명령어: #{clean_content}"
       
@@ -68,16 +73,96 @@ class CommandParser
 
   private
 
+  def handle_hp_check_commands(content, status, sender_id)
+    # 체력 확인
+    if content =~ /\[(체력|HP)\]/i
+      user = @sheet_manager.find_user(sender_id)
+      unless user
+        @client.reply(status, "@#{sender_id} 사용자를 찾을 수 없습니다.")
+        return true
+      end
+      
+      current_hp = (user["HP"] || 0).to_i
+      max_hp = 100 + ((user["체력"] || 10).to_i * 10)
+      user_name = user["이름"] || sender_id
+      
+      # 체력바 생성
+      hp_bar = generate_hp_bar(current_hp, max_hp)
+      
+      message = "@#{sender_id}\n#{user_name}의 체력:\n#{hp_bar}"
+      @client.reply(status, message)
+      return true
+    end
+    
+    false
+  end
+
+  def handle_battle_stop_commands(content, status, sender_id)
+    # 1:1 전투 중단
+    if content =~ /\[전투중단[\/\s]*(@?\w+)[\/\s]*(@?\w+)\]/i
+      user1 = $1.gsub('@', '').strip
+      user2 = $2.gsub('@', '').strip
+      
+      unless GM_ACCOUNTS.include?(sender_id)
+        @client.reply(status, "@#{sender_id} 전투 중단은 GM만 가능합니다.")
+        return true
+      end
+      
+      # 해당 사용자들의 전투 찾기 및 중단
+      battle1 = BattleState.find_by_participant(user1)
+      battle2 = BattleState.find_by_participant(user2)
+      
+      if battle1 && battle1 == battle2
+        battle_id = BattleState.find_battle_id_by_participant(user1)
+        if BattleState.force_end_battle(battle_id, "GM 전투 중단")
+          @client.reply(status, "@#{sender_id} #{user1} vs #{user2} 전투를 중단했습니다.")
+        else
+          @client.reply(status, "@#{sender_id} 전투 중단에 실패했습니다.")
+        end
+      else
+        @client.reply(status, "@#{sender_id} 해당 사용자들의 전투를 찾을 수 없습니다.")
+      end
+      return true
+    end
+    
+    # 2:2/4:4 전투 중단
+    if content =~ /\[전투중단[\/\s]*((?:@?\w+[\/\s]*){3,7}@?\w+)\]/i
+      participants_text = $1
+      participants = participants_text.split(/[\/\s]+/).map { |p| p.gsub('@', '').strip }.reject(&:empty?)
+      
+      unless GM_ACCOUNTS.include?(sender_id)
+        @client.reply(status, "@#{sender_id} 전투 중단은 GM만 가능합니다.")
+        return true
+      end
+      
+      # 첫 번째 참가자의 전투 찾기
+      battle = BattleState.find_by_participant(participants[0])
+      if battle
+        battle_id = BattleState.find_battle_id_by_participant(participants[0])
+        if BattleState.force_end_battle(battle_id, "GM 전투 중단")
+          @client.reply(status, "@#{sender_id} #{participants.join(' vs ')} 전투를 중단했습니다.")
+        else
+          @client.reply(status, "@#{sender_id} 전투 중단에 실패했습니다.")
+        end
+      else
+        @client.reply(status, "@#{sender_id} 해당 참가자들의 전투를 찾을 수 없습니다.")
+      end
+      return true
+    end
+    
+    false
+  end
+
   def handle_battle_commands(content, status, sender_id)
     puts "[CommandParser] 전투 명령어 체크: #{content}"
     
-    # 1:1 전투 개시 - 더 명확한 정규식
-    if content =~ /\[전투개시[\/\s]*(@?\w+)\]/i
+    # 1:1 전투 개시 - [전투/@상대] 형식
+    if content =~ /\[전투[\/\s]*(@?\w+)\]/i
       opponent_id = $1.gsub('@', '').strip
       puts "[CommandParser] 1v1 전투 대상: #{opponent_id}"
       
       if opponent_id.empty?
-        @client.reply(status, "@#{sender_id} 전투 상대를 지정해주세요. 예: [전투개시/@상대방]")
+        @client.reply(status, "@#{sender_id} 전투 상대를 지정해주세요. 예: [전투/@상대방]")
         return true
       end
       
@@ -89,10 +174,29 @@ class CommandParser
       @battle_command.start_1v1(sender_id, opponent_id, status)
       return true
     end
+    
+    # GM 1:1 전투 - [전투/@A/@B] 형식 (GM이 다른 사람들끼리 전투)
+    if content =~ /\[전투[\/\s]*(@?\w+)[\/\s]*(@?\w+)\]/i
+      user1 = $1.gsub('@', '').strip
+      user2 = $2.gsub('@', '').strip
+      puts "[CommandParser] GM 1v1 전투: #{user1} vs #{user2}"
+      
+      unless GM_ACCOUNTS.include?(sender_id)
+        @client.reply(status, "@#{sender_id} GM만 다른 사용자들끼리 전투를 시작할 수 있습니다.")
+        return true
+      end
+      
+      if user1 == user2
+        @client.reply(status, "@#{sender_id} 같은 사용자끼리는 전투할 수 없습니다!")
+        return true
+      end
+      
+      @battle_command.start_1v1(user1, user2, status)
+      return true
+    end
 
-    # 2:2 팀전투 개시 - 더 유연한 정규식
-    if content =~ /\[전투개시[\/\s]*((?:@?\w+[\/\s]*){3}@?\w+)\]/i ||
-       content =~ /\[팀전투[\/\s]*((?:@?\w+[\/\s]*){3}@?\w+)\]/i
+    # 2:2 팀전투 개시
+    if content =~ /\[팀전투[\/\s]*((?:@?\w+[\/\s]*){3}@?\w+)\]/i
       participants_text = $1
       puts "[CommandParser] 팀전투 참가자 텍스트: #{participants_text}"
       
@@ -137,7 +241,6 @@ class CommandParser
     # 허수아비 전투
     if content =~ /\[허수아비\s+(상|중|하)\]/i
       difficulty = $1
-      # TODO: 허수아비 전투 구현 필요
       @client.reply(status, "@#{sender_id} 허수아비 전투는 아직 구현되지 않았습니다.")
       return true
     end
@@ -174,19 +277,12 @@ class CommandParser
       return true
     end
 
-    # 도주
-    if content =~ /\[도주\]/i
-      # TODO: 도주 기능 구현 필요
-      @client.reply(status, "@#{sender_id} 도주 기능은 아직 구현되지 않았습니다.")
-      return true
-    end
-
     false
   end
 
   def handle_potion_commands(content, status, sender_id)
-    # 평상시 물약 사용
-    if content =~ /\[물약\s*(소형|중형|대형)?\]/i
+    # 평상시 물약 사용 - [물약/소형] 형식
+    if content =~ /\[물약[\/\s]*(소형|중형|대형)?\]/i
       potion_size = $1 || "소형"
       @potion_command.use_potion_casual(sender_id, potion_size, status)
       return true
@@ -257,42 +353,13 @@ class CommandParser
     false
   end
 
-  def handle_help_commands(content, status, sender_id)
-    if content =~ /\[도움말\]/i || content =~ /\[명령어\]/i || content =~ /\[help\]/i
-      help_message = <<~HELP
-        @#{sender_id}
-        ━━━━━━━━━━━━━━━━━━
-        전투봇 명령어 도움말
-        ━━━━━━━━━━━━━━━━━━
-        
-        전투 시작:
-        [전투개시/@상대방] - 1:1 전투
-        [전투개시/@팀원/@적1/@적2] - 2:2 전투  
-        [대규모전투/@참가자7명] - 4:4 전투
-        [허수아비 상/중/하] - 연습 전투
-        
-        전투 액션:
-        [공격] 또는 [공격/@타겟] - 공격
-        [방어] 또는 [방어/@타겟] - 방어
-        [반격] - 반격 태세
-        [물약사용] 또는 [물약사용/크기/@타겟]
-        [도주] - 전투 도주
-        
-        물약 사용:
-        [물약 소형/중형/대형] - 평상시 회복
-        
-        시간 제한:
-        • 1인당 4분 제한 (초과시 자동 방어)
-        • 전체 전투 1시간 제한
-        • 1시간 후 체력 총합으로 승부
-        
-        ━━━━━━━━━━━━━━━━━━
-      HELP
-      
-      @client.reply(status, help_message.strip)
-      return true
-    end
-
-    false
+  def generate_hp_bar(current_hp, max_hp, bar_length = 10)
+    return "█" * bar_length + " #{current_hp}/#{max_hp}" if current_hp >= max_hp
+    return "░" * bar_length + " #{current_hp}/#{max_hp}" if current_hp <= 0 || max_hp <= 0
+    
+    filled_length = ((current_hp.to_f / max_hp.to_f) * bar_length).round
+    empty_length = bar_length - filled_length
+    
+    "█" * filled_length + "░" * empty_length + " #{current_hp}/#{max_hp}"
   end
 end
