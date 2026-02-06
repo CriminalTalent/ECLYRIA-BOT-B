@@ -399,14 +399,14 @@ class BattleMessageFormatter
     def format_time_warning(remaining_time)
       if remaining_time > 60
         minutes = (remaining_time / 60).to_i
-        "⏰ 전투 종료까지 #{minutes}분 남았습니다!"
+        "전투 종료까지 #{minutes}분 남았습니다!"
       else
-        "⏰ 전투 종료까지 #{remaining_time}초 남았습니다!"
+        "전투 종료까지 #{remaining_time}초 남았습니다!"
       end
     end
 
     def format_timeout_message(user_name, action = "방어")
-      "⏰ 시간 초과!\n#{user_name}이(가) 4분 내에 행동하지 않아 자동으로 #{action}합니다."
+      "시간 초과!\n#{user_name}이(가) 4분 내에 행동하지 않아 자동으로 #{action}합니다."
     end
   end
 end
