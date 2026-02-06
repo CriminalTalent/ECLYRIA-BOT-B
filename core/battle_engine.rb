@@ -1,3 +1,11 @@
+# core/battle_engine.rb
+
+class BattleEngine
+  def initialize(client, sheet_manager)
+    @client = client
+    @sheet_manager = sheet_manager
+  end
+
   def reply_to_status(status, message, visibility = nil)
     use_visibility = visibility || get_visibility(status)
     if message.length <= 490
@@ -28,38 +36,10 @@
     parts
   end
 
-  def show_all_hp(state)
-    message = "━━━━━━━━━━━━━━━━━━\n"
-    message += "현재 체력\n"
-    state[:participants].each do |participant_id|
-      participant = @sheet_manager.find_user(participant_id)
-      next unless participant
-      name = participant["이름"] || participant_id
-      current_hp = (participant["HP"] || 0).to_i
-      max_hp = 100 + ((participant["체력"] || 10).to_i * 10)
-      hp_bar = generate_hp_bar(current_hp, max_hp)
-      message += "#{name.ljust(12)} #{current_hp.to_s.rjust(3)}/#{max_hp} #{hp_bar}\n"
-    end
-    message += "━━━━━━━━━━━━━━━━━━"
-    message
-  end
-
-  def generate_hp_bar(current_hp, max_hp)
-    return "██████████" if current_hp >= max_hp
-    return "░░░░░░░░░░" if current_hp <= 0 || max_hp <= 0
-    hp_percent = (current_hp.to_f / max_hp.to_f * 100).round
-    filled = (hp_percent / 10.0).floor
-    empty = 10 - filled
-    "█" * filled + "░" * empty
-  end
-end
-
-  # 액션 등록
   def register_action(user_id, action_type, target_id, battle_id, potion_size = nil)
     state = BattleState.get(battle_id)
     return unless state
 
-    # 현재 턴 확인
     if state[:current_turn] != user_id
       tags = state[:participants].map { |p| "@#{p}" }.join(" ")
       message = "#{tags}\n\n"
@@ -79,7 +59,6 @@ end
 
     user_name = get_user_name(user_id)
 
-    # 다음 턴 결정
     turn_order = state[:turn_order] || state[:participants]
     current_index = turn_order.index(user_id)
 
@@ -89,33 +68,24 @@ end
     while tried < turn_order.length
       next_index = (current_index + 1 + tried) % turn_order.length
       next_id = turn_order[next_index]
-
       next_user = @sheet_manager.find_user(next_id)
+
       if !state[:actions].key?(next_id) && (next_user["HP"] || 0).to_i > 0
         next_player = next_id
         break
       end
-
       tried += 1
     end
 
     tags = state[:participants].map { |p| "@#{p}" }.join(" ")
-    message = "#{tags}\n\n"
-    message += "#{user_name}이(가) 행동을 선택했습니다.\n\n"
+    message = "#{tags}\n\n#{user_name}이(가) 행동을 선택했습니다.\n\n"
 
     if next_player
       state[:current_turn] = next_player
       BattleState.update(battle_id, state)
-
       next_name = get_user_name(next_player)
       message += "@#{next_player} (#{next_name})\n"
-
-      if state[:type] == "pvp"
-        message += "[공격] [방어] [반격] [물약사용/크기]"
-      else
-        message += "[공격/@타겟] [방어/@아군] [반격] [물약사용/크기/@아군]"
-      end
-
+      message += state[:type] == "pvp" ? "[공격] [방어] [반격] [물약사용/크기]" : "[공격/@타겟] [방어/@아군] [반격] [물약사용/크기/@아군]"
       reply_to_state(state, message)
     else
       BattleState.update(battle_id, state)
@@ -123,20 +93,17 @@ end
     end
   end
 
-  # 라운드 처리
   def process_round(state, battle_id)
     actions = state[:actions]
     messages = []
     tags = state[:participants].map { |p| "@#{p}" }.join(" ")
 
-    # 1. 물약 사용
     potion_actions = actions.select { |_, a| a[:type] == :use_potion }
     potion_actions.each do |user_id, action|
       result = execute_potion(user_id, action[:potion_size], action[:target], state, battle_id)
       messages << result if result
     end
 
-    # 2. 반격 설정
     counter_actions = actions.select { |_, a| a[:type] == :counter }
     counter_actions.each do |user_id, _|
       state[:counter_stance] ||= {}
@@ -144,7 +111,6 @@ end
       messages << "#{get_user_name(user_id)}이(가) 반격 태세!"
     end
 
-    # 3. 방어 및 대리 방어
     defend_actions = actions.select { |_, a| a[:type] == :defend }
     defend_actions.each do |user_id, action|
       target_id = action[:target]
@@ -159,7 +125,6 @@ end
       end
     end
 
-    # 4. 공격 및 반격
     attack_actions = actions.select { |_, a| a[:type] == :attack }
     turn_order = state[:turn_order] || state[:participants]
 
@@ -172,7 +137,6 @@ end
       defender = @sheet_manager.find_user(target_id)
       next if (attacker["HP"] || 0) <= 0 || (defender["HP"] || 0) <= 0
 
-      # 같은 팀 공격 방지
       if %w[2v2 4v4].include?(state[:type])
         team1 = state[:teams][:team1]
         if team1.include?(user_id) == team1.include?(target_id)
@@ -181,7 +145,6 @@ end
         end
       end
 
-      # 대리 방어 처리
       actual_defender_id = target_id
       if state[:protect] && state[:protect][target_id]
         protector_id = state[:protect][target_id]
@@ -197,56 +160,38 @@ end
       attack_msg = "#{get_user_name(user_id)}의 공격 → #{get_user_name(actual_defender_id)}\n"
       attack_msg += "공격: #{result[:atk]} + D20(#{result[:atk_roll]}) = #{result[:atk_total]}"
       attack_msg += " [치명타!]" if result[:is_crit]
-      attack_msg += "\n"
-      attack_msg += "방어: #{result[:def]} + D20(#{result[:def_roll]})"
+      attack_msg += "\n방어: #{result[:def]} + D20(#{result[:def_roll]})"
       attack_msg += " + D20(#{result[:def_bonus]})" if result[:def_bonus] > 0
       attack_msg += " = #{result[:def_total]}\n"
-
-      if result[:damage] > 0
-        attack_msg += "#{result[:damage]} 피해! (HP: #{result[:old_hp]} → #{result[:new_hp]})"
-      else
-        attack_msg += "공격 실패!"
-      end
+      attack_msg += result[:damage] > 0 ? "#{result[:damage]} 피해! (HP: #{result[:old_hp]} → #{result[:new_hp]})" : "공격 실패!"
 
       messages << attack_msg
 
-      # 반격 처리
       if state[:counter_stance]&.[](actual_defender_id) && result[:damage] > 0
         counter_result = execute_counter(actual_defender, actual_defender_id, attacker, user_id, result[:atk_total], state, battle_id)
-
         counter_msg = "\n#{get_user_name(actual_defender_id)}의 반격 판정!\n"
         counter_msg += "반격: #{counter_result[:counter_atk]} + D20(#{counter_result[:counter_roll]}) = #{counter_result[:counter_total]}\n"
         counter_msg += "공격력: #{result[:atk_total]}\n"
-
-        if counter_result[:success]
-          counter_msg += "반격 성공! #{counter_result[:counter_damage]} 피해! (HP: #{counter_result[:old_hp]} → #{counter_result[:new_hp]})"
-        else
-          counter_msg += "반격 실패..."
-        end
-
+        counter_msg += counter_result[:success] ?
+          "반격 성공! #{counter_result[:counter_damage]} 피해! (HP: #{counter_result[:old_hp]} → #{counter_result[:new_hp]})" :
+          "반격 실패..."
         messages << counter_msg
         state[:counter_stance].delete(actual_defender_id)
       end
     end
 
-        # 라운드 결과 출력 및 다음 라운드 준비
-    message = "#{tags}\n\n"
-    message += "━━━━━━ 라운드 #{state[:round]} ━━━━━━\n\n"
+    message = "#{tags}\n\n━━━━━━ 라운드 #{state[:round]} ━━━━━━\n\n"
     message += messages.join("\n\n")
     message += "\n\n" + show_all_hp(state)
 
-    if check_battle_end(state, battle_id, message)
-      return
-    end
+    return if check_battle_end(state, battle_id, message)
 
-    # 다음 라운드 세팅
     state[:round] += 1
     state[:actions] = {}
     state[:guarded] = {}
     state[:counter_stance] = {}
     state[:protect] = {}
 
-    # 첫 턴 플레이어 설정
     turn_order = state[:turn_order] || state[:participants]
     next_first = turn_order.find do |pid|
       user = @sheet_manager.find_user(pid)
@@ -259,23 +204,15 @@ end
     if next_first
       next_name = get_user_name(next_first)
       message += "@#{next_first} (#{next_name})\n"
-      if state[:type] == "pvp"
-        message += "[공격] [방어] [반격] [물약사용/크기]"
-      else
-        message += "[공격/@타겟] [방어/@아군] [반격] [물약사용/크기/@아군]"
-      end
+      message += state[:type] == "pvp" ? "[공격] [방어] [반격] [물약사용/크기]" : "[공격/@타겟] [방어/@아군] [반격] [물약사용/크기/@아군]"
     end
 
     reply_to_state(state, message)
   end
 
-  # 승패 판단
   def check_battle_end(state, battle_id, message)
     if state[:type] == "pvp"
-      alive = state[:participants].select do |pid|
-        (@sheet_manager.find_user(pid)["HP"] || 0).to_i > 0
-      end
-
+      alive = state[:participants].select { |pid| (@sheet_manager.find_user(pid)["HP"] || 0).to_i > 0 }
       if alive.length == 1
         message += "\n\n#{get_user_name(alive.first)} 승리!"
         reply_to_state(state, message)
@@ -293,26 +230,21 @@ end
 
       if !team1_alive && !team2_alive
         message += "\n\n무승부!"
-        reply_to_state(state, message)
-        BattleState.clear(battle_id)
-        return true
       elsif !team1_alive
         message += "\n\n이그드라실 승리!"
-        reply_to_state(state, message)
-        BattleState.clear(battle_id)
-        return true
       elsif !team2_alive
         message += "\n\n불사조 기사단 승리!"
-        reply_to_state(state, message)
-        BattleState.clear(battle_id)
-        return true
+      else
+        return false
       end
-    end
 
+      reply_to_state(state, message)
+      BattleState.clear(battle_id)
+      return true
+    end
     false
   end
 
-  # 공격 처리
   def execute_attack(attacker, attacker_id, defender, defender_id, state, battle_id)
     atk = (attacker["공격"] || 10).to_i
     def_stat = (defender["방어"] || 10).to_i
@@ -350,7 +282,6 @@ end
     }
   end
 
-  # 반격 처리
   def execute_counter(counter_user, counter_id, attacker, attacker_id, attack_total, state, battle_id)
     counter_atk = (counter_user["공격"] || 10).to_i
     counter_roll = rand(1..20)
@@ -382,7 +313,6 @@ end
     end
   end
 
-  # 물약 사용
   def execute_potion(user_id, potion_size, target_id, state, battle_id)
     user = @sheet_manager.find_user(user_id)
     items_str = user["아이템"] || ""
@@ -420,7 +350,6 @@ end
     end
   end
 
-  # 아이템 파싱
   def parse_items(items_str)
     items = {}
     return items if items_str.nil? || items_str.strip.empty?
@@ -431,13 +360,11 @@ end
     items
   end
 
-  # 최대 HP 계산
   def calculate_max_hp(user)
     vitality = (user["체력"] || 10).to_i
     100 + vitality * 10
   end
 
-  # 체력 바 출력
   def generate_hp_bar(current_hp, max_hp)
     return "██████████" if current_hp >= max_hp
     return "░░░░░░░░░░" if current_hp <= 0
@@ -446,19 +373,17 @@ end
     "█" * filled + "░" * empty
   end
 
-  # 전체 체력 출력
   def show_all_hp(state)
     "━━━━━━━━━━━━━━━━━━\n현재 체력\n" +
-    state[:participants].map do |pid|
-      user = @sheet_manager.find_user(pid)
-      next unless user
-      name = user["이름"] || pid
-      hp = (user["HP"] || 0).to_i
-      max_hp = calculate_max_hp(user)
-      bar = generate_hp_bar(hp, max_hp)
-      "#{name}: #{hp}/#{max_hp} #{bar}"
-    end.compact.join("\n") +
-    "\n━━━━━━━━━━━━━━━━━━"
+      state[:participants].map do |pid|
+        user = @sheet_manager.find_user(pid)
+        next unless user
+        name = user["이름"] || pid
+        hp = (user["HP"] || 0).to_i
+        max_hp = calculate_max_hp(user)
+        bar = generate_hp_bar(hp, max_hp)
+        "#{name}: #{hp}/#{max_hp} #{bar}"
+      end.compact.join("\n") +
+      "\n━━━━━━━━━━━━━━━━━━"
   end
 end
-
