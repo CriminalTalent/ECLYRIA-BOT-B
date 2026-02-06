@@ -1,5 +1,5 @@
 # mastodon_client.rb
-# 체력바 지원 및 이모지 제거 버전
+# 스트리밍 연결 오류 해결 버전
 
 class MastodonClient
   def initialize(base_url, access_token)
@@ -16,12 +16,41 @@ class MastodonClient
   end
 
   def stream(&block)
-    @streaming.user do |notification|
-      block.call(notification)
+    retry_count = 0
+    max_retries = 10
+    
+    loop do
+      begin
+        puts "[MastodonClient] 스트리밍 연결 시작... (시도 #{retry_count + 1}/#{max_retries + 1})"
+        @streaming.user do |notification|
+          retry_count = 0  # 성공하면 재시도 카운터 리셋
+          block.call(notification)
+        end
+      rescue => e
+        retry_count += 1
+        puts "[MastodonClient] 스트리밍 오류 #{retry_count}/#{max_retries + 1}: #{e.message}"
+        
+        if retry_count <= max_retries
+          sleep_time = [retry_count * 2, 60].min  # 점진적으로 대기 시간 증가, 최대 60초
+          puts "[MastodonClient] #{sleep_time}초 후 재연결 시도..."
+          sleep(sleep_time)
+          
+          # 새로운 스트리밍 클라이언트 생성
+          begin
+            @streaming = Mastodon::Streaming::Client.new(
+              base_url: @streaming.base_url,
+              bearer_token: @streaming.bearer_token
+            )
+          rescue => init_error
+            puts "[MastodonClient] 스트리밍 클라이언트 재초기화 오류: #{init_error.message}"
+          end
+        else
+          puts "[MastodonClient] 최대 재시도 횟수 초과 - 5분 후 처음부터 시작"
+          sleep(300)  # 5분 대기
+          retry_count = 0
+        end
+      end
     end
-  rescue => e
-    puts "[MastodonClient] 스트리밍 오류: #{e.message}"
-    raise e
   end
 
   def reply(status, message)
@@ -40,7 +69,21 @@ class MastodonClient
     rescue => e
       puts "[MastodonClient] 답글 전송 오류: #{e.message}"
       puts e.backtrace[0..3]
-      nil
+      
+      # 답글 전송 재시도
+      sleep(1)
+      begin
+        result = @client.create_status(
+          message,
+          in_reply_to_id: status_id,
+          visibility: visibility
+        )
+        puts "[MastodonClient] 답글 재전송 성공: #{result.id}"
+        result
+      rescue => retry_error
+        puts "[MastodonClient] 답글 재전송도 실패: #{retry_error.message}"
+        nil
+      end
     end
   end
 
@@ -72,7 +115,7 @@ class MastodonClient
         current_status = result
         
         # 연속 전송 시 약간의 지연 (API 제한 방지)
-        sleep(0.5) if index < messages.length - 1
+        sleep(0.8) if index < messages.length - 1
       else
         puts "[MastodonClient] 스레드 #{index + 1}번째 메시지 전송 실패"
         break
@@ -203,7 +246,7 @@ class MastodonClient
     statuses.each do |status|
       result = reply(status, message)
       results << result
-      sleep(0.3) if result  # API 제한 방지
+      sleep(0.5) if result  # API 제한 방지
     end
     results
   end
