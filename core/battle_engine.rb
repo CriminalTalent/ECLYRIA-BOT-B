@@ -44,6 +44,7 @@ class BattleEngine
     
     state = BattleState.get(battle_id)
     state[:turn_order] = turn_order
+    state[:current_turn] = turn_order.first
     state[:original_status] = reply_status
     BattleState.update(battle_id, state)
     
@@ -57,7 +58,9 @@ class BattleEngine
     message += "#{opponent_name} (민첩: #{opponent_dex} + #{opponent_init - opponent_dex}) = #{opponent_init}\n\n"
     message += "턴 순서: #{turn_order.map { |id| get_user_name(id) }.join(' → ')}\n\n"
     message += show_all_hp(state)
-    message += "\n\n모두 행동을 선택하세요!\n"
+    
+    first_name = get_user_name(turn_order.first)
+    message += "\n\n@#{turn_order.first} (#{first_name})\n"
     message += "[공격] [방어] [반격] [물약사용/크기]"
     
     reply_to_status(reply_status, message, visibility)
@@ -92,6 +95,7 @@ class BattleEngine
     state = BattleState.get(battle_id)
     state[:teams] = { team1: team1, team2: team2 }
     state[:turn_order] = turn_order
+    state[:current_turn] = turn_order.first
     state[:original_status] = reply_status
     BattleState.update(battle_id, state)
     
@@ -103,7 +107,9 @@ class BattleEngine
     message += "팀2: #{team2.map { |id| get_user_name(id) }.join(', ')}\n\n"
     message += "턴 순서: #{turn_order.map { |id| get_user_name(id) }.join(' → ')}\n\n"
     message += show_all_hp(state)
-    message += "\n\n모두 행동을 선택하세요!\n"
+    
+    first_name = get_user_name(turn_order.first)
+    message += "\n\n@#{turn_order.first} (#{first_name})\n"
     message += "[공격/@타겟] [방어/@아군] [반격] [물약사용/크기/@아군]"
     
     reply_to_status(reply_status, message, visibility)
@@ -138,6 +144,7 @@ class BattleEngine
     state = BattleState.get(battle_id)
     state[:teams] = { team1: team1, team2: team2 }
     state[:turn_order] = turn_order
+    state[:current_turn] = turn_order.first
     state[:original_status] = reply_status
     BattleState.update(battle_id, state)
     
@@ -149,7 +156,9 @@ class BattleEngine
     message += "팀2: #{team2.map { |id| get_user_name(id) }.join(', ')}\n\n"
     message += "턴 순서: #{turn_order.map { |id| get_user_name(id) }.join(' → ')}\n\n"
     message += show_all_hp(state)
-    message += "\n\n모두 행동을 선택하세요!\n"
+    
+    first_name = get_user_name(turn_order.first)
+    message += "\n\n@#{turn_order.first} (#{first_name})\n"
     message += "[공격/@타겟] [방어/@아군] [반격] [물약사용/크기/@아군]"
     
     reply_to_status(reply_status, message, visibility)
@@ -160,6 +169,17 @@ class BattleEngine
     state = BattleState.get(battle_id)
     return unless state
     
+    # 현재 턴 확인
+    if state[:current_turn] != user_id
+      tags = state[:participants].map { |p| "@#{p}" }.join(" ")
+      message = "#{tags}\n\n"
+      message += "@#{user_id} 당신의 차례가 아닙니다.\n\n"
+      current_name = get_user_name(state[:current_turn])
+      message += "현재 턴: @#{state[:current_turn]} (#{current_name})"
+      reply_to_state(state, message)
+      return
+    end
+    
     # 액션 저장
     state[:actions] ||= {}
     state[:actions][user_id] = {
@@ -167,38 +187,57 @@ class BattleEngine
       target: target_id,
       potion_size: potion_size
     }
-    BattleState.update(battle_id, state)
     
     user_name = get_user_name(user_id)
     
-    # 모든 살아있는 플레이어가 선택했는지 확인
-    alive_participants = state[:participants].select do |p|
-      user = @sheet_manager.find_user(p)
-      (user["HP"] || 0).to_i > 0
+    # 턴 순서에서 다음 살아있는 플레이어 찾기
+    turn_order = state[:turn_order] || state[:participants]
+    current_index = turn_order.index(user_id)
+    
+    next_player = nil
+    tried = 0
+    
+    while tried < turn_order.length
+      next_index = (current_index + 1 + tried) % turn_order.length
+      next_id = turn_order[next_index]
+      
+      # 이미 선택했거나 죽은 플레이어는 건너뛰기
+      next_user = @sheet_manager.find_user(next_id)
+      if !state[:actions].key?(next_id) && (next_user["HP"] || 0).to_i > 0
+        next_player = next_id
+        break
+      end
+      
+      tried += 1
     end
     
-    if all_actions_ready?(state, alive_participants)
-      # 모두 선택 완료 → 라운드 처리
-      process_round(state, battle_id)
-    else
-      # 아직 선택 중
-      remaining = alive_participants.select { |p| !state[:actions].key?(p) }
+    tags = state[:participants].map { |p| "@#{p}" }.join(" ")
+    message = "#{tags}\n\n"
+    message += "#{user_name}이(가) 행동을 선택했습니다.\n\n"
+    
+    if next_player
+      # 다음 플레이어의 턴
+      state[:current_turn] = next_player
+      BattleState.update(battle_id, state)
       
-      tags = state[:participants].map { |p| "@#{p}" }.join(" ")
-      message = "#{tags}\n\n"
-      message += "#{user_name}이(가) 행동을 선택했습니다.\n\n"
-      message += "대기 중: #{remaining.map { |id| get_user_name(id) }.join(', ')}"
+      next_name = get_user_name(next_player)
+      message += "@#{next_player} (#{next_name})\n"
+      
+      if state[:type] == "pvp"
+        message += "[공격] [방어] [반격] [물약사용/크기]"
+      else
+        message += "[공격/@타겟] [방어/@아군] [반격] [물약사용/크기/@아군]"
+      end
       
       reply_to_state(state, message)
+    else
+      # 모두 선택 완료 → 라운드 처리
+      BattleState.update(battle_id, state)
+      process_round(state, battle_id)
     end
   end
 
   private
-
-  # 모든 액션이 준비되었는지 확인
-  def all_actions_ready?(state, alive_participants)
-    alive_participants.all? { |p| state[:actions].key?(p) }
-  end
 
   # 라운드 처리 (우선순위: 물약 > 반격 > 방어 > 공격)
   def process_round(state, battle_id)
@@ -294,14 +333,28 @@ class BattleEngine
     state[:round] += 1
     state[:actions] = {}
     state[:guarded] = {}
+    
+    # 첫 번째 살아있는 플레이어부터 시작
+    turn_order = state[:turn_order] || state[:participants]
+    next_first = turn_order.find do |p|
+      user = @sheet_manager.find_user(p)
+      (user["HP"] || 0).to_i > 0
+    end
+    
+    state[:current_turn] = next_first
     BattleState.update(battle_id, state)
     
-    message += "\n\n다음 라운드!\n"
+    message += "\n\n━━━━━━ 다음 라운드 ━━━━━━\n\n"
     
-    if state[:type] == "pvp"
-      message += "[공격] [방어] [반격] [물약사용/크기]"
-    else
-      message += "[공격/@타겟] [방어/@아군] [반격] [물약사용/크기/@아군]"
+    if next_first
+      next_name = get_user_name(next_first)
+      message += "@#{next_first} (#{next_name})\n"
+      
+      if state[:type] == "pvp"
+        message += "[공격] [방어] [반격] [물약사용/크기]"
+      else
+        message += "[공격/@타겟] [방어/@아군] [반격] [물약사용/크기/@아군]"
+      end
     end
     
     reply_to_state(state, message)
