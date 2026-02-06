@@ -18,14 +18,62 @@ class CommandParser
     puts "[파서] 명령어: #{content[0..100]}"
     
     case content
-    # 체력 확인
-    when /\[체력\]|\[HP\]|\[hp\]|\[스탯\]/
-      check_hp(sender_id, status)
-      
+    # ========================================
+    # 우선순위 1: 물약 사용 (최우선)
+    # ========================================
+    
+    # 물약 사용 (전투 중 - 대상 지정)
+    when /\[물약사용\s*\/\s*(소형|중형|대형)\s*\/\s*@(\w+)\]/
+      potion_size = $1
+      target_id = $2
+      @potion_command.use_potion_in_battle(sender_id, potion_size, target_id, status)
+    
+    # 물약 사용 (전투 중 - 자신)
+    when /\[물약사용\s*\/\s*(소형|중형|대형)\]/
+      potion_size = $1
+      @potion_command.use_potion_in_battle(sender_id, potion_size, nil, status)
+    
     # 일상 물약 사용
     when /\[물약\s*\/\s*(소형|중형|대형)\]/
       potion_size = $1
       @potion_command.use_potion_casual(sender_id, potion_size, status)
+    
+    # ========================================
+    # 우선순위 2: 반격
+    # ========================================
+    
+    when /\[반격\]/
+      @battle_command.counter(sender_id, status)
+    
+    # ========================================
+    # 우선순위 3: 방어
+    # ========================================
+    
+    # 방어 (아군 지정)
+    when /\[방어\s*\/\s*@(\w+)\]/
+      target_id = $1
+      @battle_command.defend(sender_id, target_id, status)
+    
+    # 방어 (자신)
+    when /\[방어\]/
+      @battle_command.defend(sender_id, nil, status)
+    
+    # ========================================
+    # 우선순위 4: 공격
+    # ========================================
+    
+    # 공격 (팀전 - 타겟 지정)
+    when /\[공격\s*\/\s*@(\w+)\]/
+      target_id = $1
+      @battle_command.attack(sender_id, target_id, status)
+    
+    # 공격 (1:1)
+    when /\[공격\]/
+      @battle_command.attack(sender_id, nil, status)
+    
+    # ========================================
+    # 전투 시작 명령어
+    # ========================================
     
     # 1:1 전투 시작
     when /\[전투\s*\/\s*@(\w+)\]/
@@ -42,38 +90,13 @@ class CommandParser
       p1, p2, p3, p4, p5, p6, p7, p8 = $1, $2, $3, $4, $5, $6, $7, $8
       @battle_command.start_4v4(p1, p2, p3, p4, p5, p6, p7, p8, status)
     
-    # 공격 (1:1)
-    when /\[공격\]$/
-      @battle_command.attack(sender_id, nil, status)
+    # ========================================
+    # 상태 확인 명령어
+    # ========================================
     
-    # 공격 (팀전)
-    when /\[공격\s*\/\s*@(\w+)\]/
-      target_id = $1
-      @battle_command.attack(sender_id, target_id, status)
-    
-    # 방어 (자신)
-    when /\[방어\]$/
-      @battle_command.defend(sender_id, nil, status)
-    
-    # 방어 (아군)
-    when /\[방어\s*\/\s*@(\w+)\]/
-      target_id = $1
-      @battle_command.defend(sender_id, target_id, status)
-    
-    # 반격
-    when /\[반격\]/
-      @battle_command.counter(sender_id, status)
-    
-    # 물약 사용 (전투 중 - 자신)
-    when /\[물약사용\s*\/\s*(소형|중형|대형)\]$/
-      potion_size = $1
-      @potion_command.use_potion_in_battle(sender_id, potion_size, nil, status)
-    
-    # 물약 사용 (전투 중 - 대상 지정)
-    when /\[물약사용\s*\/\s*(소형|중형|대형)\s*\/\s*@(\w+)\]/
-      potion_size = $1
-      target_id = $2
-      @potion_command.use_potion_in_battle(sender_id, potion_size, target_id, status)
+    # 체력 확인
+    when /\[체력\]|\[HP\]|\[hp\]|\[스탯\]/
+      check_hp(sender_id, status)
     
     else
       # 명령어 미인식
