@@ -1,192 +1,175 @@
-# commands/battle_command.rb
-
-require_relative '../core/battle_engine'
 require_relative '../core/battle_state'
 
-class BattleCommand
-  def initialize(client, sheet_manager)
-    @client = client
+class GMBattleCommand
+  def initialize(mastodon_client, sheet_manager)
+    @mastodon_client = mastodon_client
     @sheet_manager = sheet_manager
-    @engine = BattleEngine.new(@client, @sheet_manager)
   end
 
-  # 1:1 전투 시작
-  def start_1v1(user_id, opponent_id, reply_status)
-    user = @sheet_manager.find_user(user_id)
-    opponent = @sheet_manager.find_user(opponent_id)
-
-    unless user
-      @client.reply(reply_status, "@#{user_id} 사용자를 찾을 수 없습니다.")
+  # [전투목록] / [전투상태]
+  def list_battles(reply_status)
+    battles = BattleState.all_battles
+    
+    if battles.empty?
+      @mastodon_client.reply(reply_status, "진행 중인 전투가 없습니다.")
       return
     end
-
-    unless opponent
-      @client.reply(reply_status, "@#{opponent_id} 사용자를 찾을 수 없습니다.")
-      return
-    end
-
-    @engine.start_battle(user_id, opponent_id, reply_status)
-  end
-
-  # 2:2 전투 시작
-  def start_2v2(p1, p2, p3, p4, reply_status)
-    participants = [p1, p2, p3, p4]
-
-    if participants.uniq.length != 4
-      @client.reply(reply_status, "참가자가 중복되었습니다!")
-      return
-    end
-
-    participants.each do |pid|
-      unless @sheet_manager.find_user(pid)
-        @client.reply(reply_status, "@#{pid} 사용자를 찾을 수 없습니다.")
-        return
+    
+    msg = "━━━━━━━━━━━━━━━━━━\n"
+    msg += "진행 중인 전투 목록\n"
+    msg += "━━━━━━━━━━━━━━━━━━\n"
+    
+    battles.each_with_index do |(battle_id, state), index|
+      elapsed = Time.now - state[:start_time]
+      minutes = (elapsed / 60).to_i
+      seconds = (elapsed % 60).to_i
+      
+      type_label = case state[:type]
+                   when "1v1" then "[PVP]"
+                   when "2v2" then "[2V2]"
+                   when "4v4" then "[4V4]"
+                   else "[???]"
+                   end
+      
+      participants = state[:participants].join(' ')
+      msg += "#{index + 1}. #{type_label} #{participants} (#{minutes}분 #{seconds}초)\n"
+      msg += "   현재 턴: #{state[:current_turn]}\n"
+      
+      if state[:type] != "1v1"
+        actions_count = (state[:actions_queue] || []).length
+        total_count = state[:participants].length
+        msg += "   행동 선택: #{actions_count}/#{total_count}\n"
       end
     end
-
-    @engine.start_2v2_battle([p1, p2], [p3, p4], reply_status)
+    
+    msg += "━━━━━━━━━━━━━━━━━━"
+    
+    @mastodon_client.reply(reply_status, msg)
   end
 
-  # 4:4 전투 시작
-  def start_4v4(p1, p2, p3, p4, p5, p6, p7, p8, reply_status)
-    participants = [p1, p2, p3, p4, p5, p6, p7, p8]
-
-    if participants.uniq.length != 8
-      @client.reply(reply_status, "참가자가 중복되었습니다!")
+  # [전투종료 battle_id]
+  def end_battle(battle_id, reply_status)
+    state = BattleState.get(battle_id)
+    
+    unless state
+      @mastodon_client.reply(reply_status, "존재하지 않는 전투 ID입니다.")
       return
     end
+    
+    participants = state[:participants].join(', ')
+    BattleState.clear(battle_id)
+    
+    msg = "전투가 강제 종료되었습니다.\n"
+    msg += "전투 ID: #{battle_id}\n"
+    msg += "참가자: #{participants}"
+    
+    @mastodon_client.reply(reply_status, msg)
+  end
 
-    participants.each do |pid|
-      unless @sheet_manager.find_user(pid)
-        @client.reply(reply_status, "@#{pid} 사용자를 찾을 수 없습니다.")
-        return
+  # [사용자전투종료 @사용자]
+  def end_user_battles(user_id, reply_status)
+    battles = BattleState.all_battles
+    ended_count = 0
+    
+    battles.each do |battle_id, state|
+      if state[:participants].include?(user_id)
+        BattleState.clear(battle_id)
+        ended_count += 1
       end
     end
-
-    @engine.start_4v4_battle([p1, p2, p3, p4], [p5, p6, p7, p8], reply_status)
+    
+    if ended_count > 0
+      msg = "#{user_id}님의 전투 #{ended_count}개가 종료되었습니다."
+    else
+      msg = "#{user_id}님이 참가 중인 전투가 없습니다."
+    end
+    
+    @mastodon_client.reply(reply_status, msg)
   end
 
-  # 공격
-  def attack(user_id, target_id, reply_status)
-    state, battle_id = get_battle_and_state(user_id, reply_status)
-    return unless state
-
-    if state[:actions]&.key?(user_id)
-      @client.reply(reply_status, "@#{user_id} 이미 행동을 선택했습니다.")
-      return
-    end
-
-    case state[:type]
-    when "pvp"
-      opponent_id = state[:participants].find { |p| p != user_id }
-      @engine.register_action(user_id, :attack, opponent_id, battle_id)
-    when "2v2", "4v4"
-      unless target_id
-        @client.reply(reply_status, "@#{user_id} 팀 전투에서는 [공격/@대상]으로 지정해야 합니다.")
-        return
-      end
-      @engine.register_action(user_id, :attack, target_id, battle_id)
-    end
-  end
-
-  # 방어
-  def defend(user_id, target_id, reply_status)
-    state, battle_id = get_battle_and_state(user_id, reply_status)
-    return unless state
-
-    if state[:actions]&.key?(user_id)
-      @client.reply(reply_status, "@#{user_id} 이미 행동을 선택했습니다.")
-      return
-    end
-
-    defend_target = target_id || user_id
-
-    if %w[2v2 4v4].include?(state[:type]) && target_id
-      unless same_team?(state, user_id, target_id)
-        @client.reply(reply_status, "@#{user_id} 아군만 방어할 수 있습니다.")
-        return
+  # [전투통계]
+  def battle_stats(reply_status)
+    battles = BattleState.all_battles
+    
+    pvp_battles = battles.select { |_, state| state[:type] == "1v1" }
+    v2_battles = battles.select { |_, state| state[:type] == "2v2" }
+    v4_battles = battles.select { |_, state| state[:type] == "4v4" }
+    
+    # 평균 시간 계산
+    avg_pvp = calculate_average_time(pvp_battles)
+    avg_2v2 = calculate_average_time(v2_battles)
+    avg_4v4 = calculate_average_time(v4_battles)
+    
+    # 대기 중인 액션 수
+    pending_actions = 0
+    battles.each do |_, state|
+      if state[:type] != "1v1"
+        actions = (state[:actions_queue] || []).length
+        expected = state[:participants].length
+        pending_actions += (expected - actions) if actions < expected
       end
     end
-
-    @engine.register_action(user_id, :defend, defend_target, battle_id)
+    
+    # 멈춘 전투 (30분 이상 액션 없음)
+    stalled_battles = battles.count do |_, state|
+      (Time.now - state[:last_action_time]) > 1800
+    end
+    
+    msg = "━━━━━━━━━━━━━━━━━━\n"
+    msg += "전투 시스템 통계\n"
+    msg += "━━━━━━━━━━━━━━━━━━\n"
+    msg += "1:1 전투: #{pvp_battles.length}개 (평균 #{avg_pvp}분)\n"
+    msg += "2:2 전투: #{v2_battles.length}개 (평균 #{avg_2v2}분)\n"
+    msg += "4:4 전투: #{v4_battles.length}개 (평균 #{avg_4v4}분)\n"
+    msg += "대기 중인 액션: #{pending_actions}개\n"
+    msg += "멈춘 전투: #{stalled_battles}개\n"
+    msg += "━━━━━━━━━━━━━━━━━━"
+    
+    @mastodon_client.reply(reply_status, msg)
   end
 
-  # 반격
-  def counter(user_id, reply_status)
-    state, battle_id = get_battle_and_state(user_id, reply_status)
-    return unless state
-
-    if state[:actions]&.key?(user_id)
-      @client.reply(reply_status, "@#{user_id} 이미 행동을 선택했습니다.")
+  # [시간초과테스트 battle_id]
+  def test_timeout(battle_id, reply_status)
+    state = BattleState.get(battle_id)
+    
+    unless state
+      @mastodon_client.reply(reply_status, "존재하지 않는 전투 ID입니다.")
       return
     end
-
-    @engine.register_action(user_id, :counter, nil, battle_id)
-  end
-
-  # 물약 사용
-  def use_potion(user_id, potion_size, target_id, reply_status)
-    state, battle_id = get_battle_and_state(user_id, reply_status)
-    return unless state
-
-    if state[:actions]&.key?(user_id)
-      @client.reply(reply_status, "@#{user_id} 이미 행동을 선택했습니다.")
-      return
+    
+    # 시간 체크
+    turn_elapsed = Time.now - state[:last_action_time]
+    battle_elapsed = Time.now - state[:start_time]
+    
+    msg = "━━━━━━━━━━━━━━━━━━\n"
+    msg += "시간 초과 테스트\n"
+    msg += "━━━━━━━━━━━━━━━━━━\n"
+    msg += "전투 ID: #{battle_id}\n"
+    msg += "현재 턴: #{state[:current_turn]}\n"
+    msg += "턴 경과: #{turn_elapsed.to_i}초 / 240초\n"
+    msg += "전투 경과: #{battle_elapsed.to_i}초 / 3600초\n"
+    msg += "━━━━━━━━━━━━━━━━━━\n"
+    
+    if turn_elapsed > 240
+      msg += "턴 시간 초과! (자동 방어 대상)\n"
     end
-
-    user = @sheet_manager.find_user(user_id)
-    unless user
-      @client.reply(reply_status, "@#{user_id} 사용자 정보를 불러올 수 없습니다.")
-      return
+    
+    if battle_elapsed > 3600
+      msg += "전투 시간 초과! (체력 총합 승부)\n"
     end
-
-    items = user["아이템"] || []
-    potion_key = case potion_size
-                 when "소형", "소형물약" then "소형물약"
-                 when "중형", "중형물약" then "중형물약"
-                 when "대형", "대형물약" then "대형물약"
-                 else
-                   @client.reply(reply_status, "@#{user_id} 알 수 없는 물약입니다.")
-                   return
-                 end
-
-    unless items.include?(potion_key)
-      @client.reply(reply_status, "@#{user_id} #{potion_key}이(가) 없습니다.")
-      return
-    end
-
-    heal_target = target_id || user_id
-
-    if %w[2v2 4v4].include?(state[:type]) && target_id
-      unless same_team?(state, user_id, target_id)
-        @client.reply(reply_status, "@#{user_id} 아군에게만 물약을 사용할 수 있습니다.")
-        return
-      end
-    end
-
-    @engine.register_action(user_id, :use_potion, heal_target, battle_id, potion_size)
+    
+    @mastodon_client.reply(reply_status, msg)
   end
 
   private
 
-  # 현재 전투 상태 및 ID 가져오기
-  def get_battle_and_state(user_id, reply_status)
-    battle = BattleState.find_by_participant(user_id)
-    unless battle
-      @client.reply(reply_status, "@#{user_id} 전투 중이 아닙니다.")
-      return [nil, nil]
+  def calculate_average_time(battles)
+    return 0 if battles.empty?
+    
+    total_time = battles.sum do |_, state|
+      Time.now - state[:start_time]
     end
-
-    battle_id = battle[:battle_id]
-    state = BattleState.get(battle_id)
-    [state, battle_id]
-  end
-
-  # 같은 팀인지 확인
-  def same_team?(state, user_id, target_id)
-    team1 = state[:teams][:team1]
-    team2 = state[:teams][:team2]
-    (team1.include?(user_id) && team1.include?(target_id)) ||
-      (team2.include?(user_id) && team2.include?(target_id))
+    
+    (total_time / battles.length / 60).to_i
   end
 end
