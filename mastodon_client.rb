@@ -8,31 +8,31 @@ class MastodonClient
   def initialize(base_url, token)
     @base_url = base_url
     @token = token
-    
+
     # REST API 클라이언트
     @client = Mastodon::REST::Client.new(
       base_url: @base_url,
       bearer_token: @token
     )
-    
+
     # 스트리밍 클라이언트
     @streaming_client = Mastodon::Streaming::Client.new(
       base_url: @base_url,
       bearer_token: @token
     )
-    
+
     puts "[MastodonClient] 초기화 완료: #{@base_url}"
   end
 
   def stream(&block)
     puts "[MastodonClient] 스트리밍 시작..."
-    
+
     @streaming_client.user do |message|
       case message
       when Mastodon::Notification
         # 멘션 알림
         yield message if message.type == 'mention'
-        
+
       when Mastodon::Status
         # DM 확인 (visibility가 'direct'인 상태)
         if message.visibility == 'direct'
@@ -54,26 +54,33 @@ class MastodonClient
 
   def reply(status, content, visibility: nil)
     begin
-      # status에서 원본 visibility 가져오기
+      # 메시지 길이 자르기 (500자 제한 대응)
+      if content.length > 500
+        content = content[0..496] + "…"
+      end
+
+      # 원본 visibility 추출
       original_visibility = if status.respond_to?(:visibility)
         status.visibility
       else
         status['visibility'] || status[:visibility] || 'public'
       end
-      
+
       use_visibility = visibility || original_visibility
-      
+
       status_id = if status.respond_to?(:id)
         status.id
       else
         status['id'] || status[:id]
       end
-      
+
+      # 응답 전송
       @client.create_status(
-        content,
+        content.dup.force_encoding("UTF-8"),
         in_reply_to_id: status_id,
         visibility: use_visibility
       )
+
       puts "[MastodonClient] 응답 전송 (#{use_visibility}): #{content[0..50]}..."
     rescue => e
       puts "[MastodonClient] 응답 오류: #{e.message}"
