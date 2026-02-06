@@ -1,166 +1,252 @@
 # commands/potion_command.rb
-# 물약 사용 명령어 (D열 아이템란 연동)
+
+require_relative '../state/battle_state'
 
 class PotionCommand
-  # 물약 크기별 회복량
-  POTION_HEAL = {
-    "소형" => 10,
-    "중형" => 30,
-    "대형" => 50
-  }.freeze
-
-  def initialize(mastodon_client, sheet_manager)
-    @client = mastodon_client
+  def initialize(client, sheet_manager)
+    @client = client
     @sheet_manager = sheet_manager
   end
 
-  # 본인에게 물약 사용
-  def use_potion(user_id, reply_status, potion_type = "소형")
+  # 전투 중 물약 사용
+  def use_potion_in_battle(user_id, potion_size, target_id, reply_status)
+    battle = BattleState.find_by_participant(user_id)
+    
+    unless battle
+      @client.reply(reply_status, "@#{user_id} 전투 중이 아닙니다.")
+      return
+    end
+    
+    battle_id = battle[:battle_id]
+    state = BattleState.get(battle_id)
+    
+    # 턴 확인
+    unless state[:current_turn] == user_id
+      @client.reply(reply_status, "@#{user_id} 당신의 차례가 아닙니다.")
+      return
+    end
+    
     user = @sheet_manager.find_user(user_id)
+    items_str = user["아이템"] || ""
+    items = parse_items(items_str)
     
-    unless user
-      @client.reply(reply_status, "@#{user_id} 사용자를 찾을 수 없습니다.")
+    # 물약 종류 확인
+    potion_key = case potion_size
+    when "소형", "소형물약"
+      "소형물약"
+    when "중형", "중형물약"
+      "중형물약"
+    when "대형", "대형물약"
+      "대형물약"
+    else
+      @client.reply(reply_status, "@#{user_id} 알 수 없는 물약입니다. (소형/중형/대형)")
       return
     end
-
-    # 물약 회복량
-    heal_amount = POTION_HEAL[potion_type] || POTION_HEAL["소형"]
     
-    # D열 아이템란에서 물약 확인
-    potion_key = "#{potion_type}물약"
-    current_potions = parse_items(user["아이템"] || "")
-    
-    unless current_potions[potion_key] && current_potions[potion_key] > 0
-      @client.reply(reply_status, "@#{user_id} #{potion_type} 물약이 없습니다.")
+    # 물약 보유 확인
+    unless items[potion_key] && items[potion_key] > 0
+      @client.reply(reply_status, "@#{user_id} #{potion_key}이(가) 없습니다.")
       return
     end
-
-    # 현재 HP
-    current_hp = (user["HP"] || 0).to_i
-    max_hp = calculate_max_hp(user)
     
-    if current_hp >= max_hp
-      @client.reply(reply_status, "@#{user_id} 이미 체력이 가득 찼습니다. (#{current_hp}/#{max_hp})")
+    # 회복량 설정
+    heal_amount = case potion_key
+    when "소형물약" then 10
+    when "중형물약" then 30
+    when "대형물약" then 50
+    end
+    
+    # 대상 결정
+    heal_target_id = target_id || user_id
+    heal_target = @sheet_manager.find_user(heal_target_id)
+    
+    unless heal_target
+      @client.reply(reply_status, "@#{heal_target_id} 사용자를 찾을 수 없습니다.")
       return
     end
-
-    # HP 회복
+    
+    # 팀전에서 아군인지 확인
+    if state[:type] == "2v2" || state[:type] == "4v4"
+      user_team = state[:teams][:team1].include?(user_id) ? :team1 : :team2
+      target_team = state[:teams][:team1].include?(heal_target_id) ? :team1 : :team2
+      
+      if user_team != target_team
+        @client.reply(reply_status, "@#{user_id} 아군에게만 물약을 사용할 수 있습니다.")
+        return
+      end
+    end
+    
+    # 물약 사용
+    current_hp = (heal_target["HP"] || 0).to_i
+    max_hp = 100 + ((heal_target["체력"] || 10).to_i * 10)
     new_hp = [current_hp + heal_amount, max_hp].min
-    actual_heal = new_hp - current_hp
     
-    # 물약 차감
-    current_potions[potion_key] -= 1
-    new_items = build_items_string(current_potions)
+    @sheet_manager.update_user(heal_target_id, { "HP" => new_hp })
     
-    # 업데이트
-    @sheet_manager.update_user(user_id, { 
-      hp: new_hp,
-      items: new_items
-    })
-
+    # 물약 감소
+    items[potion_key] -= 1
+    items.delete(potion_key) if items[potion_key] <= 0
+    new_items_str = items.map { |k, v| "#{k}:#{v}" }.join(", ")
+    @sheet_manager.update_user(user_id, { "아이템" => new_items_str })
+    
+    # 메시지 전송
     user_name = user["이름"] || user_id
-    message = "@#{user_id} #{user_name}이(가) #{potion_type} 물약을 사용했습니다.\n"
-    message += "회복: +#{actual_heal} HP\n"
-    message += "현재 HP: #{new_hp}/#{max_hp}"
+    target_name = heal_target["이름"] || heal_target_id
     
-    @client.reply(reply_status, message)
+    message = "#{user_name}이(가) #{potion_key} 사용!\n"
+    if user_id == heal_target_id
+      message += "HP +#{heal_amount} (#{current_hp} → #{new_hp})\n"
+    else
+      message += "#{target_name}의 HP +#{heal_amount} (#{current_hp} → #{new_hp})\n"
+    end
+    
+    # 다음 턴으로
+    if state[:type] == "pvp"
+      opponent_id = state[:participants].find { |p| p != user_id }
+      state[:current_turn] = opponent_id
+      state[:round] += 1
+      BattleState.update(battle_id, state)
+      
+      opponent = @sheet_manager.find_user(opponent_id)
+      opponent_name = opponent["이름"] || opponent_id
+      
+      message += "\n#{opponent_name}의 차례\n"
+      message += "[공격] [방어] [반격] [물약사용/크기]"
+    else
+      # 팀전 다음 턴
+      next_turn_multi(state, battle_id)
+      next_user = @sheet_manager.find_user(state[:current_turn])
+      next_name = next_user["이름"] || state[:current_turn]
+      
+      message += "\n#{next_name}의 차례\n"
+      message += "[공격/@타겟] [방어/@아군] [반격] [물약사용/크기/@아군]"
+    end
+    
+    @client.reply({ "uri" => state[:thread_ts] }, message)
   end
 
-  # 아군에게 물약 사용
-  def use_potion_for_target(user_id, reply_status, potion_type = "소형", target_id)
+  # 일상에서 물약 사용 (전투 밖)
+  def use_potion_casual(user_id, potion_size, reply_status)
     user = @sheet_manager.find_user(user_id)
-    target = @sheet_manager.find_user(target_id)
     
     unless user
       @client.reply(reply_status, "@#{user_id} 사용자를 찾을 수 없습니다.")
       return
     end
     
-    unless target
-      @client.reply(reply_status, "@#{target_id} 대상을 찾을 수 없습니다.")
+    items_str = user["아이템"] || ""
+    items = parse_items(items_str)
+    
+    # 물약 종류 확인
+    potion_key = case potion_size
+    when "소형", "소형물약"
+      "소형물약"
+    when "중형", "중형물약"
+      "중형물약"
+    when "대형", "대형물약"
+      "대형물약"
+    else
+      @client.reply(reply_status, "@#{user_id} 알 수 없는 물약입니다. (소형/중형/대형)")
       return
     end
-
-    # 물약 회복량
-    heal_amount = POTION_HEAL[potion_type] || POTION_HEAL["소형"]
     
-    # 사용자의 D열 아이템란에서 물약 확인
-    potion_key = "#{potion_type}물약"
-    current_potions = parse_items(user["아이템"] || "")
-    
-    unless current_potions[potion_key] && current_potions[potion_key] > 0
-      @client.reply(reply_status, "@#{user_id} #{potion_type} 물약이 없습니다.")
+    # 물약 보유 확인
+    unless items[potion_key] && items[potion_key] > 0
+      @client.reply(reply_status, "@#{user_id} #{potion_key}이(가) 없습니다.")
       return
     end
-
-    # 대상 현재 HP
-    current_hp = (target["HP"] || 0).to_i
-    max_hp = calculate_max_hp(target)
     
+    # 회복량 설정
+    heal_amount = case potion_key
+    when "소형물약" then 10
+    when "중형물약" then 30
+    when "대형물약" then 50
+    end
+    
+    # 현재 체력
+    current_hp = (user["HP"] || 0).to_i
+    max_hp = 100 + ((user["체력"] || 10).to_i * 10)
+    
+    # 이미 최대 체력이면
     if current_hp >= max_hp
-      target_name = target["이름"] || target_id
-      @client.reply(reply_status, "@#{target_id} #{target_name}의 체력이 이미 가득 찼습니다. (#{current_hp}/#{max_hp})")
+      @client.reply(reply_status, "@#{user_id} 이미 체력이 최대입니다! (#{current_hp}/#{max_hp})")
       return
     end
-
-    # HP 회복
+    
+    # 물약 사용
     new_hp = [current_hp + heal_amount, max_hp].min
     actual_heal = new_hp - current_hp
+    @sheet_manager.update_user(user_id, { "HP" => new_hp })
     
-    # 물약 차감
-    current_potions[potion_key] -= 1
-    new_items = build_items_string(current_potions)
+    # 물약 감소
+    items[potion_key] -= 1
+    items.delete(potion_key) if items[potion_key] <= 0
+    new_items_str = items.map { |k, v| "#{k}:#{v}" }.join(", ")
+    @sheet_manager.update_user(user_id, { "아이템" => new_items_str })
     
-    # 업데이트
-    @sheet_manager.update_user(user_id, { 
-      items: new_items
-    })
-    
-    @sheet_manager.update_user(target_id, { 
-      hp: new_hp
-    })
-
     user_name = user["이름"] || user_id
-    target_name = target["이름"] || target_id
+    hp_bar = generate_hp_bar(new_hp, max_hp)
     
-    message = "@#{user_id} #{user_name}이(가) @#{target_id} #{target_name}에게 #{potion_type} 물약을 사용했습니다.\n"
-    message += "회복: +#{actual_heal} HP\n"
-    message += "현재 HP: #{new_hp}/#{max_hp}"
+    message = "💊 #{user_name}이(가) #{potion_key} 사용!\n"
+    message += "HP +#{actual_heal} (#{current_hp} → #{new_hp})\n"
+    message += "#{hp_bar} #{new_hp}/#{max_hp}"
     
     @client.reply(reply_status, message)
   end
 
   private
 
-  # 최대 HP 계산
-  def calculate_max_hp(user)
-    vitality = (user["체력"] || user[:vitality] || 10).to_i
-    base_hp = 100
-    max_hp = base_hp + (vitality * 10)
-    max_hp
-  end
-
-  # 아이템 문자열 파싱 (D열)
-  # 예: "소형물약:3, 중형물약:1, 대형물약:0"
-  def parse_items(items_string)
+  # 아이템 파싱
+  def parse_items(items_str)
     items = {}
+    return items if items_str.nil? || items_str.strip.empty?
     
-    return items if items_string.nil? || items_string.strip.empty?
-    
-    items_string.split(',').each do |item|
-      item = item.strip
-      if item =~ /^(.+?):(\d+)$/
-        item_name = $1.strip
-        count = $2.to_i
-        items[item_name] = count
-      end
+    items_str.split(',').each do |item|
+      parts = item.strip.split(':')
+      next if parts.length != 2
+      
+      name = parts[0].strip
+      count = parts[1].strip.to_i
+      items[name] = count if count > 0
     end
     
     items
   end
 
-  # 아이템 딕셔너리를 문자열로 변환
-  def build_items_string(items_hash)
-    items_hash.map { |name, count| "#{name}:#{count}" }.join(", ")
+  # 팀전 다음 턴
+  def next_turn_multi(state, battle_id)
+    turn_order = state[:turn_order]
+    current_index = turn_order.index(state[:current_turn])
+    
+    # 다음 살아있는 참가자 찾기
+    next_index = (current_index + 1) % turn_order.length
+    tried = 0
+    
+    while tried < turn_order.length
+      next_user_id = turn_order[next_index]
+      next_user = @sheet_manager.find_user(next_user_id)
+      
+      if (next_user["HP"] || 0).to_i > 0
+        state[:current_turn] = next_user_id
+        state[:round] += 1 if next_index == 0
+        BattleState.update(battle_id, state)
+        return
+      end
+      
+      next_index = (next_index + 1) % turn_order.length
+      tried += 1
+    end
+  end
+
+  # HP바 생성
+  def generate_hp_bar(current_hp, max_hp)
+    return "██████████" if current_hp >= max_hp
+    return "░░░░░░░░░░" if current_hp <= 0 || max_hp <= 0
+    
+    hp_percent = (current_hp.to_f / max_hp.to_f * 100).round
+    filled = (hp_percent / 10.0).floor
+    empty = 10 - filled
+    
+    "█" * filled + "░" * empty
   end
 end
