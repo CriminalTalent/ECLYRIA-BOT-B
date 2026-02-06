@@ -1,14 +1,13 @@
 # commands/battle_command.rb
-# Mastodon 기반 전투 명령어 처리 (1:1, 2:2, 4:4)
 
 require_relative '../core/battle_engine'
-require_relative '../state/battle_state'
+require_relative '../core/battle_state'
 
 class BattleCommand
-  def initialize(mastodon_client, sheet_manager)
-    @client = mastodon_client
+  def initialize(client, sheet_manager)
+    @client = client
     @sheet_manager = sheet_manager
-    @engine = BattleEngine.new(mastodon_client)
+    @engine = BattleEngine.new(@client, @sheet_manager)
   end
 
   # 1:1 전투 시작
@@ -27,7 +26,7 @@ class BattleCommand
       return
     end
     
-    # 전투 시작 (중복 체크 제거 - 동시 전투 가능)
+    # 전투 시작
     @engine.start_battle(user_id, opponent_id, reply_status)
   end
 
@@ -53,7 +52,6 @@ class BattleCommand
     team1 = [p1, p2]
     team2 = [p3, p4]
     
-    # 동시 전투 가능
     @engine.start_2v2_battle(team1, team2, reply_status)
   end
 
@@ -79,11 +77,10 @@ class BattleCommand
     team1 = [p1, p2, p3, p4]
     team2 = [p5, p6, p7, p8]
     
-    # 동시 전투 가능
     @engine.start_4v4_battle(team1, team2, reply_status)
   end
 
-  # 공격
+  # 공격 (액션 등록)
   def attack(user_id, target_id, reply_status)
     battle = BattleState.find_by_participant(user_id)
     
@@ -95,26 +92,29 @@ class BattleCommand
     battle_id = battle[:battle_id]
     state = BattleState.get(battle_id)
     
-    # 턴 확인
-    unless state[:current_turn] == user_id
-      @client.reply(reply_status, "@#{user_id} 당신의 차례가 아닙니다.")
+    # 이미 행동을 선택했는지 확인
+    if state[:actions] && state[:actions].key?(user_id)
+      @client.reply(reply_status, "@#{user_id} 이미 행동을 선택했습니다.")
       return
     end
     
     # 전투 타입에 따라 처리
     case state[:type]
     when "pvp"
-      @engine.handle_battle_action(user_id, :attack, battle_id)
+      # 1:1은 상대가 자동으로 타겟
+      opponent_id = state[:participants].find { |p| p != user_id }
+      @engine.register_action(user_id, :attack, opponent_id, battle_id)
+      
     when "2v2", "4v4"
       unless target_id
         @client.reply(reply_status, "@#{user_id} 팀 전투에서는 [공격/@타겟]으로 대상을 지정해야 합니다.")
         return
       end
-      @engine.handle_multi_action(user_id, :attack, target_id, battle_id, state)
+      @engine.register_action(user_id, :attack, target_id, battle_id)
     end
   end
 
-  # 방어
+  # 방어 (액션 등록)
   def defend(user_id, target_id, reply_status)
     battle = BattleState.find_by_participant(user_id)
     
@@ -126,29 +126,32 @@ class BattleCommand
     battle_id = battle[:battle_id]
     state = BattleState.get(battle_id)
     
-    # 턴 확인
-    unless state[:current_turn] == user_id
-      @client.reply(reply_status, "@#{user_id} 당신의 차례가 아닙니다.")
+    # 이미 행동을 선택했는지 확인
+    if state[:actions] && state[:actions].key?(user_id)
+      @client.reply(reply_status, "@#{user_id} 이미 행동을 선택했습니다.")
       return
     end
     
-    # 전투 타입에 따라 처리
-    case state[:type]
-    when "pvp"
-      # 자신 방어
-      @engine.handle_battle_action(user_id, :defend, battle_id)
-    when "2v2", "4v4"
+    # target_id가 없으면 자신을 방어
+    defend_target = target_id || user_id
+    
+    # 팀전에서 아군인지 확인
+    if state[:type] == "2v2" || state[:type] == "4v4"
       if target_id
-        # 아군 방어
-        @engine.handle_multi_action(user_id, :defend_target, target_id, battle_id, state)
-      else
-        # 자신 방어
-        @engine.handle_multi_action(user_id, :defend, nil, battle_id, state)
+        user_team = state[:teams][:team1].include?(user_id) ? :team1 : :team2
+        target_team = state[:teams][:team1].include?(target_id) ? :team1 : :team2
+        
+        if user_team != target_team
+          @client.reply(reply_status, "@#{user_id} 아군만 방어할 수 있습니다.")
+          return
+        end
       end
     end
+    
+    @engine.register_action(user_id, :defend, defend_target, battle_id)
   end
 
-  # 반격
+  # 반격 (액션 등록)
   def counter(user_id, reply_status)
     battle = BattleState.find_by_participant(user_id)
     
@@ -160,18 +163,49 @@ class BattleCommand
     battle_id = battle[:battle_id]
     state = BattleState.get(battle_id)
     
-    # 턴 확인
-    unless state[:current_turn] == user_id
-      @client.reply(reply_status, "@#{user_id} 당신의 차례가 아닙니다.")
+    # 이미 행동을 선택했는지 확인
+    if state[:actions] && state[:actions].key?(user_id)
+      @client.reply(reply_status, "@#{user_id} 이미 행동을 선택했습니다.")
       return
     end
     
-    # 전투 타입에 따라 처리
-    case state[:type]
-    when "pvp"
-      @engine.handle_battle_action(user_id, :counter, battle_id)
-    when "2v2", "4v4"
-      @engine.handle_multi_action(user_id, :counter, nil, battle_id, state)
+    @engine.register_action(user_id, :counter, nil, battle_id)
+  end
+
+  # 물약 사용 (액션 등록)
+  def use_potion(user_id, potion_size, target_id, reply_status)
+    battle = BattleState.find_by_participant(user_id)
+    
+    unless battle
+      @client.reply(reply_status, "@#{user_id} 전투 중이 아닙니다.")
+      return
     end
+    
+    battle_id = battle[:battle_id]
+    state = BattleState.get(battle_id)
+    
+    # 이미 행동을 선택했는지 확인
+    if state[:actions] && state[:actions].key?(user_id)
+      @client.reply(reply_status, "@#{user_id} 이미 행동을 선택했습니다.")
+      return
+    end
+    
+    # target_id가 없으면 자신에게 사용
+    heal_target = target_id || user_id
+    
+    # 팀전에서 아군인지 확인
+    if state[:type] == "2v2" || state[:type] == "4v4"
+      if target_id
+        user_team = state[:teams][:team1].include?(user_id) ? :team1 : :team2
+        target_team = state[:teams][:team1].include?(target_id) ? :team1 : :team2
+        
+        if user_team != target_team
+          @client.reply(reply_status, "@#{user_id} 아군에게만 물약을 사용할 수 있습니다.")
+          return
+        end
+      end
+    end
+    
+    @engine.register_action(user_id, :use_potion, heal_target, battle_id, potion_size)
   end
 end
