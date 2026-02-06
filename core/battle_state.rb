@@ -59,9 +59,9 @@ class BattleState
         thread_ts: thread_ts,
         channel: channel,
         visibility: visibility,
-        current_turn: participants.first,
         round: 1,
         guarded: {},
+        actions: {},  # 각 참가자의 선택한 액션 저장
         last_action_time: Time.now
       }
       puts "[BattleState] 전투 생성: #{battle_id} (#{participants.join(' vs ')})"
