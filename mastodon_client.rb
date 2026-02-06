@@ -1,5 +1,6 @@
 # mastodon_client.rb
 require 'mastodon'
+require 'ostruct'
 
 class MastodonClient
   attr_reader :client, :streaming_client
@@ -29,11 +30,19 @@ class MastodonClient
     @streaming_client.user do |message|
       case message
       when Mastodon::Notification
-        yield message
+        # 멘션 알림
+        yield message if message.type == 'mention'
+        
       when Mastodon::Status
-        # 상태 업데이트 무시
-      else
-        # 기타 메시지 무시
+        # DM 확인 (visibility가 'direct'인 상태)
+        if message.visibility == 'direct'
+          # DM을 Notification 형태로 변환
+          dm_notification = OpenStruct.new(
+            type: 'mention',
+            status: message
+          )
+          yield dm_notification
+        end
       end
     end
   rescue => e
@@ -43,15 +52,32 @@ class MastodonClient
     retry
   end
 
-  def reply(status, content)
+  def reply(status, content, visibility: nil)
     begin
+      # status에서 원본 visibility 가져오기
+      original_visibility = if status.respond_to?(:visibility)
+        status.visibility
+      else
+        status['visibility'] || status[:visibility] || 'public'
+      end
+      
+      use_visibility = visibility || original_visibility
+      
+      status_id = if status.respond_to?(:id)
+        status.id
+      else
+        status['id'] || status[:id]
+      end
+      
       @client.create_status(
         content,
-        in_reply_to_id: status['id'] || status[:id]
+        in_reply_to_id: status_id,
+        visibility: use_visibility
       )
-      puts "[MastodonClient] 응답 전송: #{content[0..50]}..."
+      puts "[MastodonClient] 응답 전송 (#{use_visibility}): #{content[0..50]}..."
     rescue => e
       puts "[MastodonClient] 응답 오류: #{e.message}"
+      puts e.backtrace[0..3]
     end
   end
 
