@@ -2,12 +2,20 @@
 require 'mastodon'
 
 class MastodonClient
-  attr_reader :client
+  attr_reader :client, :streaming_client
 
   def initialize(base_url, token)
     @base_url = base_url
     @token = token
+    
+    # REST API 클라이언트
     @client = Mastodon::REST::Client.new(
+      base_url: @base_url,
+      bearer_token: @token
+    )
+    
+    # 스트리밍 클라이언트
+    @streaming_client = Mastodon::Streaming::Client.new(
       base_url: @base_url,
       bearer_token: @token
     )
@@ -18,7 +26,7 @@ class MastodonClient
   def stream(&block)
     puts "[MastodonClient] 스트리밍 시작..."
     
-    @client.stream('user') do |message|
+    @streaming_client.user do |message|
       case message
       when Mastodon::Notification
         yield message
@@ -30,7 +38,7 @@ class MastodonClient
     end
   rescue => e
     puts "[MastodonClient] 스트리밍 오류: #{e.message}"
-    puts e.backtrace
+    puts e.backtrace[0..5]
     sleep 5
     retry
   end
