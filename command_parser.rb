@@ -19,19 +19,31 @@ class CommandParser
     
     case content
     # ========================================
-    # 우선순위 1: 물약 사용 (최우선)
+    # 우선순위 1: 물약 사용
     # ========================================
     
     # 물약 사용 (전투 중 - 대상 지정)
     when /\[물약사용\s*\/\s*(소형|중형|대형)\s*\/\s*@(\w+)\]/
       potion_size = $1
       target_id = $2
-      @potion_command.use_potion_in_battle(sender_id, potion_size, target_id, status)
+      # 전투 중인지 확인하여 분기
+      battle = @battle_command.instance_variable_get(:@engine).instance_variable_get(:@client)
+      require_relative 'core/battle_state'
+      if BattleState.find_by_participant(sender_id)
+        @battle_command.use_potion(sender_id, potion_size, target_id, status)
+      else
+        @potion_command.use_potion_casual(sender_id, potion_size, status)
+      end
     
     # 물약 사용 (전투 중 - 자신)
     when /\[물약사용\s*\/\s*(소형|중형|대형)\]/
       potion_size = $1
-      @potion_command.use_potion_in_battle(sender_id, potion_size, nil, status)
+      require_relative 'core/battle_state'
+      if BattleState.find_by_participant(sender_id)
+        @battle_command.use_potion(sender_id, potion_size, nil, status)
+      else
+        @potion_command.use_potion_casual(sender_id, potion_size, status)
+      end
     
     # 일상 물약 사용
     when /\[물약\s*\/\s*(소형|중형|대형)\]/
@@ -129,7 +141,8 @@ class CommandParser
     hp_percent = (current_hp.to_f / max_hp * 100).round
     hp_bar = generate_hp_bar(current_hp, max_hp)
     
-    message = "#{name}의 상태\n"
+    message = "@#{user_id}\n\n"
+    message += "#{name}의 상태\n"
     message += "━━━━━━━━━━━━━━━━━━\n"
     message += "체력: #{current_hp}/#{max_hp} (#{hp_percent}%)\n"
     message += "#{hp_bar}\n"
