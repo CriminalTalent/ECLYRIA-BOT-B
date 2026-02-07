@@ -55,7 +55,7 @@ end
 # ---------------------------------
 # Mastodon 연결 + 계정 확인
 # ---------------------------------
-mastodon = MastodonClient.new(base_url: BASE_URL, token: TOKEN)
+mastodon = MastodonClient.new(BASE_URL, TOKEN)
 
 begin
   acct = mastodon.verify_credentials
@@ -69,7 +69,7 @@ end
 # 엔진 / 파서
 # ---------------------------------
 battle_engine = BattleEngine.new(mastodon, sheet_manager)
-parser = CommandParser.new(mastodon, battle_engine)
+parser = CommandParser.new(mastodon, sheet_manager)
 puts "[파서] 초기화 완료"
 puts "멘션 스트리밍 시작..."
 
@@ -109,7 +109,7 @@ loop do
         sender = status.dig(:account, :acct) || "unknown"
         puts "[스트리밍] #{mention_id} - @#{sender}"
 
-        parser.parse(status)
+        parser.handle(status)
 
       rescue => e
         puts "[에러] 멘션 처리 오류: #{e.class}: #{e.message}"
