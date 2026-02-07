@@ -73,12 +73,10 @@ class BattleTimer
     @engine.auto_defend_timeout(battle_id, state)
   end
 
-  # 전투 시간 초과 처리 (1시간)
+  # 전투 시간 초과 처리 (1시간) - 데스매치로 전환 (전투 계속)
   def handle_battle_timeout(battle_id, state)
-    puts "[타이머] #{battle_id}: 전투 시간 초과 (1시간) - HP 합산으로 승부 결정"
-
-    # BattleEngine의 end_battle_by_hp_total 호출
-    @engine.end_battle_by_hp_total(battle_id, state)
+    puts "[타이머] #{battle_id}: 전투 시간 1시간 초과 - 데스매치로 계속 진행"
+    # 1시간 초과해도 전투 종료 없이 계속 진행
   end
 
   # 생존 참가자 목록

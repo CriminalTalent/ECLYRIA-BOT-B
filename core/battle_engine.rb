@@ -639,12 +639,12 @@ class BattleEngine
       # HP 업데이트
       if result[:damage] > 0
         new_hp = [(defender["HP"] || 100).to_i - result[:damage], 0].max
-        @sheet_manager.update_user(actual_defender_id, { hp: new_hp })
+        @sheet_manager.update_user(actual_defender_id, { "HP" => new_hp })
       end
 
       if result[:counter_damage] > 0
         attacker_new_hp = [(attacker["HP"] || 100).to_i - result[:counter_damage], 0].max
-        @sheet_manager.update_user(attacker_id, { hp: attacker_new_hp })
+        @sheet_manager.update_user(attacker_id, { "HP" => attacker_new_hp })
       end
     end
 
@@ -817,8 +817,8 @@ class BattleEngine
     max_hp = 100 + (vitality_stat * 10)
     new_hp = [current_hp + heal_amount, max_hp].min
 
-    @sheet_manager.update_user(user_id, { items: items })
-    @sheet_manager.update_user(target_id, { hp: new_hp })
+    @sheet_manager.update_user(user_id, { "아이템" => items.join(',') })
+    @sheet_manager.update_user(target_id, { "HP" => new_hp })
 
     if user_id == target_id
       message = "#{user_name}이(가) #{potion_name} 사용! HP +#{heal_amount} (#{current_hp} → #{new_hp})"

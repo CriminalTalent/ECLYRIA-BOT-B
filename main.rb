@@ -106,7 +106,7 @@ loop do
 
         processed.add(mention_id)
 
-        sender = status.dig(:account, :acct) || "unknown"
+        sender = (status.dig(:account, :acct) || "unknown").to_s.strip
         puts "[스트리밍] #{mention_id} - @#{sender}"
 
         parser.handle(status)

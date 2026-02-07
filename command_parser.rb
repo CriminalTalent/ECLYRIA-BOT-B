@@ -21,7 +21,7 @@ class CommandParser
   def handle(status)
     content = status[:content]
     text = content.gsub(/<[^>]+>/, '').strip
-    user_id = status[:account][:acct]
+    user_id = status[:account][:acct].to_s.strip
     parse(text, user_id, status)
   end
 

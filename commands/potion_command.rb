@@ -88,8 +88,8 @@ class PotionCommand
     new_hp = [current_hp + heal_amount, max_hp].min
 
     @sheet_manager.update_user(user_id, {
-      hp: new_hp,
-      items: items
+      "HP" => new_hp,
+      "아이템" => items.is_a?(Array) ? items.join(',') : items
     })
 
     user_name = user["이름"] || user_id

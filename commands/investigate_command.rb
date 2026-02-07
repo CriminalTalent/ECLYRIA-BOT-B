@@ -68,7 +68,7 @@ class InvestigateCommand
     if items.any?
       current_items = user["아이템"].to_s.split(",").map(&:strip).reject(&:empty?)
       new_items = current_items + items
-      @sheet_manager.update_user(user_id, { items: new_items.join(", ") })
+      @sheet_manager.update_user(user_id, { "아이템" => new_items.join(", ") })
       rewards << "아이템: #{items.join(', ')}"
     end
 
@@ -76,7 +76,7 @@ class InvestigateCommand
     if galleons > 0
       current_galleons = user["갈레온"].to_i
       new_galleons = current_galleons + galleons
-      @sheet_manager.update_user(user_id, { galleons: new_galleons })
+      @sheet_manager.update_user(user_id, { "갈레온" => new_galleons })
       rewards << "갈레온: +#{galleons}G (총 #{new_galleons}G)"
     end
 

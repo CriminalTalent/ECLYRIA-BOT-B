@@ -98,11 +98,11 @@ class HealCommand
     actual_heal = new_hp - current_hp
 
     # HP 업데이트
-    @sheet_manager.update_user(user_id, { hp: new_hp })
+    @sheet_manager.update_user(user_id, { "HP" => new_hp })
 
     # 물약 제거 (정확히 일치하는 것만 제거)
     new_items = items.sub(potion_found, "").gsub(/,+/, ",").gsub(/^,|,$/, "").strip
-    @sheet_manager.update_user(user_id, { items: new_items })
+    @sheet_manager.update_user(user_id, { "아이템" => new_items })
 
     name = user["이름"] || user[:name] || user_id
     

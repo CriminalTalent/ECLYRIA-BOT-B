@@ -59,7 +59,7 @@ class MidnightDamage
       new_hp = [current_hp - DAMAGE_AMOUNT, 0].max
 
       # 업데이트
-      @sheet_manager.update_user(user_id, { hp: new_hp })
+      @sheet_manager.update_user(user_id, { "HP" => new_hp })
 
       user_name = user["이름"] || user_id
       max_hp = calculate_max_hp(user)

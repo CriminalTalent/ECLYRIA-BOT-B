@@ -210,6 +210,8 @@ class MastodonClient
 
           event_data.each_line do |line|
             line = line.strip
+            next if line.empty? || line == ":"
+
             if line.start_with?("event:")
               event_type = line.sub("event:", "").strip
             elsif line.start_with?("data:")
