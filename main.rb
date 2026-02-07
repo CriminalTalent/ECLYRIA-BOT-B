@@ -69,7 +69,7 @@ end
 # 엔진 / 파서
 # ---------------------------------
 battle_engine = BattleEngine.new(mastodon, sheet_manager)
-parser = CommandParser.new(mastodon, battle_engine)
+parser = CommandParser.new(mastodon, sheet_manager)
 puts "[파서] 초기화 완료"
 puts "멘션 스트리밍 시작..."
 
