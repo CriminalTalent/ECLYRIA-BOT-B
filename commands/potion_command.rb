@@ -1,7 +1,7 @@
 require_relative '../core/battle_state'
 
 class PotionCommand
-  POTION_HEAL = {
+  POTION_EFFECTS = {
     "소형" => 10,
     "중형" => 30,
     "대형" => 50
@@ -12,70 +12,88 @@ class PotionCommand
     @sheet_manager = sheet_manager
   end
 
-  # 본인에게 물약 사용
-  def use_potion(user_id, reply_status, potion_type = nil)
-    unless potion_type
-      @mastodon_client.reply(reply_status, "물약 크기를 지정하세요: [물약/소형] [물약/중형] [물약/대형]")
-      return
-    end
-
+  # 평상시 또는 전투 중 본인에게 물약 사용
+  def use_potion(user_id, reply_status, potion_type)
     user = @sheet_manager.find_user(user_id)
     unless user
       @mastodon_client.reply(reply_status, "등록되지 않은 사용자입니다.")
       return
     end
 
-    user_name = user["이름"] || user_id
-    heal_amount = POTION_HEAL[potion_type] || 10
+    potion_name = "#{potion_type}물약"
+    heal_amount = POTION_EFFECTS[potion_type]
     
-    # 물약 소지 확인
-    items = (user["아이템"] || "").split(',').map(&:strip)
-    potion_key = "#{potion_type}물약"
-    
-    unless items.include?(potion_key)
-      @mastodon_client.reply(reply_status, "#{user_name}은(는) #{potion_type}물약이 없습니다!")
+    unless heal_amount
+      @mastodon_client.reply(reply_status, "알 수 없는 물약 종류입니다.")
       return
     end
 
-    # 체력 계산
-    vitality_stat = (user["체력"] || 0).to_i
-    max_hp = 100 + (vitality_stat * 10)
-    current_hp = (user["HP"] || 100).to_i
-    new_hp = [current_hp + heal_amount, max_hp].min
-    actual_heal = new_hp - current_hp
+    # 아이템 배열 처리 (Array 또는 String)
+    items = user["아이템"]
+    items = items.is_a?(Array) ? items : items.to_s.split(',').map(&:strip)
+    
+    unless items.include?(potion_name)
+      @mastodon_client.reply(reply_status, "#{potion_name}을(를) 보유하고 있지 않습니다.")
+      return
+    end
 
     # 물약 제거
-    items.delete_at(items.index(potion_key))
-    new_items = items.join(', ')
-
-    # 업데이트
-    @sheet_manager.update_user(user_id, { hp: new_hp, items: new_items })
-
-    # 전투 중인지 확인
-    battle_id = BattleState.find_battle_id_by_user(user_id)
+    items.delete_at(items.index(potion_name))
     
+    # 체력 회복
+    current_hp = (user["HP"] || 100).to_i
+    vitality_stat = (user["체력"] || 0).to_i
+    max_hp = 100 + (vitality_stat * 10)
+    new_hp = [current_hp + heal_amount, max_hp].min
+    
+    @sheet_manager.update_user(user_id, { 
+      hp: new_hp,
+      items: items
+    })
+
+    user_name = user["이름"] || user_id
+    hp_bar = create_hp_bar(new_hp, max_hp)
+    
+    message = "#{user_name}이(가) #{potion_name} 사용!\n"
+    message += "HP +#{heal_amount} (#{current_hp} → #{new_hp})\n"
+    message += "#{hp_bar} #{new_hp}/#{max_hp}"
+    
+    # 전투 중이라면 턴 소모
+    battle_id = BattleState.find_battle_id_by_user(user_id)
     if battle_id
       state = BattleState.get(battle_id)
-      
       if state && state[:current_turn].to_s == user_id.to_s
-        # 전투 중 물약 사용
-        hp_bar = create_hp_bar(new_hp, max_hp)
+        message += "\n━━━━━━━━━━━━━━━━━━\n"
         
-        message = "#{user_name}이(가) #{potion_type}물약 사용!\n"
-        message += "HP +#{actual_heal} (#{current_hp} → #{new_hp})\n"
-        message += "#{hp_bar} #{new_hp}/#{max_hp}\n"
-        message += "━━━━━━━━━━━━━━━━━━\n"
-
         # 턴 넘기기
-        if state[:type] == "2v2" || state[:type] == "4v4"
-          state[:turn_index] += 1
+        if state[:type] == "1v1"
+          opponent_id = state[:participants].find { |p| p != user_id }
+          state[:current_turn] = opponent_id
+          state[:last_action_time] = Time.now
           BattleState.update(battle_id, state)
-
-          if state[:turn_index] >= state[:participants].length
-            # 라운드 처리는 엔진에서
-            require_relative '../core/battle_engine'
-            engine = BattleEngine.new(@mastodon_client, @sheet_manager)
-            engine.send(:process_team_round, battle_id, state, message)
+          
+          opponent = @sheet_manager.find_user(opponent_id)
+          opponent_name = opponent ? (opponent["이름"] || opponent_id) : opponent_id
+          
+          message += "#{opponent_name}의 차례\n"
+          message += "[공격] [방어] [반격] [물약사용/크기]"
+        elsif state[:type] == "2v2" || state[:type] == "4v4"
+          # 팀전투에서는 액션 큐에 추가
+          state[:actions_queue] ||= []
+          state[:actions_queue] << {
+            user_id: user_id,
+            action: :use_potion,
+            potion_type: potion_type
+          }
+          
+          state[:turn_index] += 1
+          state[:last_action_time] = Time.now
+          BattleState.update(battle_id, state)
+          
+          total_participants = state[:participants].length
+          if state[:turn_index] >= total_participants
+            # 라운드 처리는 battle_engine에서
+            message += "대기 중..."
           else
             state[:current_turn] = state[:turn_order][state[:turn_index]]
             BattleState.update(battle_id, state)
@@ -85,39 +103,31 @@ class PotionCommand
             
             message += "#{next_player_name}의 차례\n"
             message += "[공격/@타겟] [방어/@타겟] [반격] [물약사용/크기/@타겟]"
-            
-            reply_to_battle(message, state)
           end
-        else
-          # 1:1 전투
-          state[:current_turn] = state[:turn_order][(state[:turn_order].index(state[:current_turn]) + 1) % state[:turn_order].length]
-          BattleState.update(battle_id, state)
-          
-          next_player = @sheet_manager.find_user(state[:current_turn])
-          next_player_name = next_player ? (next_player["이름"] || state[:current_turn]) : state[:current_turn]
-          
-          message += "#{next_player_name}의 차례\n"
-          message += "[공격] [방어] [반격] [물약사용/크기]"
-          
-          reply_to_battle(message, state)
         end
       end
-    else
-      # 평상시 물약 사용
-      hp_bar = create_hp_bar(new_hp, max_hp)
-      
-      message = "#{user_name}이(가) #{potion_type}물약 사용!\n"
-      message += "HP +#{actual_heal} (#{current_hp} → #{new_hp})\n"
-      message += "#{hp_bar} #{new_hp}/#{max_hp}"
-      
-      @mastodon_client.reply(reply_status, message)
     end
+    
+    @mastodon_client.reply(reply_status, message)
   end
 
-  # 타인에게 물약 사용 (팀전투 전용)
+  # 팀전투에서 아군에게 물약 사용
   def use_potion_for_target(user_id, reply_status, potion_type, target_id)
-    unless potion_type
-      @mastodon_client.reply(reply_status, "물약 크기를 지정하세요: [물약사용/소형/@대상]")
+    battle_id = BattleState.find_battle_id_by_user(user_id)
+    state = BattleState.get(battle_id)
+    
+    unless state
+      @mastodon_client.reply(reply_status, "현재 전투 중이 아닙니다.")
+      return
+    end
+
+    unless state[:current_turn].to_s == user_id.to_s
+      @mastodon_client.reply(reply_status, "당신의 차례가 아닙니다.")
+      return
+    end
+
+    unless state[:participants].include?(target_id)
+      @mastodon_client.reply(reply_status, "전투 참가자가 아닙니다.")
       return
     end
 
@@ -125,74 +135,76 @@ class PotionCommand
     target = @sheet_manager.find_user(target_id)
     
     unless user && target
-      @mastodon_client.reply(reply_status, "사용자 정보를 찾을 수 없습니다.")
+      @mastodon_client.reply(reply_status, "등록되지 않은 사용자입니다.")
       return
     end
+
+    potion_name = "#{potion_type}물약"
+    heal_amount = POTION_EFFECTS[potion_type]
+    
+    unless heal_amount
+      @mastodon_client.reply(reply_status, "알 수 없는 물약 종류입니다.")
+      return
+    end
+
+    # 아이템 배열 처리
+    items = user["아이템"]
+    items = items.is_a?(Array) ? items : items.to_s.split(',').map(&:strip)
+    
+    unless items.include?(potion_name)
+      @mastodon_client.reply(reply_status, "#{potion_name}을(를) 보유하고 있지 않습니다.")
+      return
+    end
+
+    # 물약 제거
+    items.delete_at(items.index(potion_name))
+    @sheet_manager.update_user(user_id, { items: items })
+
+    # 타겟 체력 회복
+    current_hp = (target["HP"] || 100).to_i
+    vitality_stat = (target["체력"] || 0).to_i
+    max_hp = 100 + (vitality_stat * 10)
+    new_hp = [current_hp + heal_amount, max_hp].min
+    
+    @sheet_manager.update_user(target_id, { hp: new_hp })
 
     user_name = user["이름"] || user_id
     target_name = target["이름"] || target_id
-    heal_amount = POTION_HEAL[potion_type] || 10
-
-    # 물약 소지 확인
-    items = (user["아이템"] || "").split(',').map(&:strip)
-    potion_key = "#{potion_type}물약"
+    hp_bar = create_hp_bar(new_hp, max_hp)
     
-    unless items.include?(potion_key)
-      @mastodon_client.reply(reply_status, "#{user_name}은(는) #{potion_type}물약이 없습니다!")
-      return
-    end
+    message = "#{user_name}이(가) #{target_name}에게 #{potion_name} 사용!\n"
+    message += "HP +#{heal_amount} (#{current_hp} → #{new_hp})\n"
+    message += "#{hp_bar} #{new_hp}/#{max_hp}\n"
+    message += "━━━━━━━━━━━━━━━━━━\n"
 
-    # 체력 계산
-    vitality_stat = (target["체력"] || 0).to_i
-    max_hp = 100 + (vitality_stat * 10)
-    current_hp = (target["HP"] || 100).to_i
-    new_hp = [current_hp + heal_amount, max_hp].min
-    actual_heal = new_hp - current_hp
-
-    # 물약 제거
-    items.delete_at(items.index(potion_key))
-    new_items = items.join(', ')
-
-    # 업데이트
-    @sheet_manager.update_user(user_id, { items: new_items })
-    @sheet_manager.update_user(target_id, { hp: new_hp })
-
-    # 전투 중인지 확인
-    battle_id = BattleState.find_battle_id_by_user(user_id)
+    # 턴 넘기기
+    state[:actions_queue] ||= []
+    state[:actions_queue] << {
+      user_id: user_id,
+      action: :heal_target,
+      target: target_id,
+      potion_type: potion_type
+    }
     
-    if battle_id
-      state = BattleState.get(battle_id)
+    state[:turn_index] += 1
+    state[:last_action_time] = Time.now
+    BattleState.update(battle_id, state)
+    
+    total_participants = state[:participants].length
+    if state[:turn_index] >= total_participants
+      message += "대기 중..."
+    else
+      state[:current_turn] = state[:turn_order][state[:turn_index]]
+      BattleState.update(battle_id, state)
       
-      if state && state[:current_turn].to_s == user_id.to_s
-        hp_bar = create_hp_bar(new_hp, max_hp)
-        
-        message = "#{user_name}이(가) #{target_name}에게 #{potion_type}물약 사용!\n"
-        message += "HP +#{actual_heal} (#{current_hp} → #{new_hp})\n"
-        message += "#{target_name}: #{hp_bar} #{new_hp}/#{max_hp}\n"
-        message += "━━━━━━━━━━━━━━━━━━\n"
-
-        # 턴 넘기기
-        state[:turn_index] += 1
-        BattleState.update(battle_id, state)
-
-        if state[:turn_index] >= state[:participants].length
-          require_relative '../core/battle_engine'
-          engine = BattleEngine.new(@mastodon_client, @sheet_manager)
-          engine.send(:process_team_round, battle_id, state, message)
-        else
-          state[:current_turn] = state[:turn_order][state[:turn_index]]
-          BattleState.update(battle_id, state)
-          
-          next_player = @sheet_manager.find_user(state[:current_turn])
-          next_player_name = next_player["이름"] || state[:current_turn]
-          
-          message += "#{next_player_name}의 차례\n"
-          message += "[공격/@타겟] [방어/@타겟] [반격] [물약사용/크기/@타겟]"
-          
-          reply_to_battle(message, state)
-        end
-      end
+      next_player = @sheet_manager.find_user(state[:current_turn])
+      next_player_name = next_player["이름"] || state[:current_turn]
+      
+      message += "#{next_player_name}의 차례\n"
+      message += "[공격/@타겟] [방어/@타겟] [반격] [물약사용/크기/@타겟]"
     end
+    
+    @mastodon_client.reply(reply_status, message)
   end
 
   private
@@ -205,11 +217,5 @@ class PotionCommand
     empty = "░" * (10 - filled_length)
     
     filled + empty
-  end
-
-  def reply_to_battle(message, state)
-    return unless state[:reply_status]
-    participants = state[:participants]
-    @mastodon_client.reply_with_mentions(state[:reply_status], message, participants)
   end
 end
