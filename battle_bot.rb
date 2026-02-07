@@ -1,116 +1,87 @@
 # battle_bot.rb
 require 'bundler/setup'
 require 'dotenv/load'
-require 'mastodon'
 require 'set'
 
 require_relative 'sheet_manager'
 require_relative 'mastodon_client'
 require_relative 'command_parser'
+require_relative 'battle_timer'
 
 class BattleBot
-  # ---- 단일 실행 락 (중복 실행 방지) ----
   LOCK_PATH = "/tmp/battle-bot.lock"
-  # -------------------------------------
 
   def initialize
-    # ---- 단일 실행 락 획득 ----
     @lock_file = File.open(LOCK_PATH, "w")
     unless @lock_file.flock(File::LOCK_EX | File::LOCK_NB)
-      puts "[봇][pid=#{Process.pid}] 이미 실행 중입니다(락 존재). 종료합니다."
+      puts "[봇][pid=#{Process.pid}] 이미 실행 중(락). 종료."
       exit 0
     end
-    @lock_file.sync = true
-    @lock_file.write("#{Process.pid}\n")
-    # --------------------------
 
-    # 중복 알림 처리 방지용 캐시
     @seen_notification_ids = Set.new
 
-    # 환경 변수 로드
     @base_url = ENV['MASTODON_BASE_URL']
     @access_token = ENV['ACCESS_TOKEN']
 
     unless @base_url && @access_token
-      puts "[봇][pid=#{Process.pid}] 오류: 환경 변수가 설정되지 않았습니다!"
-      puts "MASTODON_BASE_URL: #{@base_url.nil? ? '없음' : '있음'}"
-      puts "ACCESS_TOKEN: #{@access_token.nil? ? '없음' : '있음'}"
+      puts "[봇][pid=#{Process.pid}] 환경 변수 누락: MASTODON_BASE_URL/ACCESS_TOKEN 확인"
       exit 1
     end
 
-    # SheetManager 초기화
     @sheet_manager = SheetManager.new
-
-    # MastodonClient 초기화
-    @mastodon_client = MastodonClient.new(@base_url, @access_token)
-
-    # CommandParser 초기화
+    @mastodon_client = ::MastodonClient.new(@base_url, @access_token)
     @command_parser = CommandParser.new(@mastodon_client, @sheet_manager)
+    @battle_timer = BattleTimer.new(@mastodon_client, @sheet_manager)
 
     puts "[봇][pid=#{Process.pid}] 초기화 완료"
   end
 
   def start
     puts "[봇][pid=#{Process.pid}] 시작..."
+    
+    # 전투 타이머 시작
+    @battle_timer.start
 
-    begin
-      @mastodon_client.stream do |notification|
-        next unless notification.kind_of?(Mastodon::Notification)
-        next unless notification.type == 'mention'
+    @mastodon_client.stream(limit: 20, interval: 2, dismiss: false) do |notification|
+      type = (notification["type"] || notification[:type]).to_s
+      next unless type == "mention"
 
-        # ---- 중복 알림(mention) 처리 방지 ----
-        nid = notification.id.to_s
-        if @seen_notification_ids.include?(nid)
-          puts "[봇][pid=#{Process.pid}] 중복 알림 스킵: notification_id=#{nid}"
-          next
-        end
-        @seen_notification_ids.add(nid)
+      nid = (notification["id"] || notification[:id]).to_s
+      next if nid.empty?
 
-        # 캐시가 무한히 커지지 않도록 상한 유지(최근 500개 정도)
-        if @seen_notification_ids.size > 600
-          @seen_notification_ids = Set.new(@seen_notification_ids.to_a.last(500))
-        end
-        # -------------------------------------
-
-        status = notification.status
-        next unless status && status.account
-
-        begin
-          content = status.content.to_s
-          account = status.account
-
-          # acct는 local이면 "user", remote면 "user@domain" 형태일 수 있음.
-          # sender_id는 기존 로직대로 도메인을 제거해 유지.
-          sender_id = account.acct.to_s.split('@').first
-
-          # HTML 태그 제거
-          clean_content = content.gsub(/<[^>]*>/, '').strip
-
-          # ---- 멘션 태그 깨짐 복원: "@ Battle" -> "@Battle" ----
-          clean_content = clean_content.gsub(/@\s+/, '@')
-          # ----------------------------------------------------
-
-          puts "[봇][pid=#{Process.pid}] 멘션 수신: #{sender_id} - #{clean_content[0..80]}"
-
-          # 명령어 파싱 및 처리 (기존 기능 유지)
-          @command_parser.parse_and_execute(clean_content, status, sender_id)
-
-        rescue => e
-          puts "[봇][pid=#{Process.pid}] 멘션 처리 오류: #{e.message}"
-          puts e.backtrace[0..5]
-        end
+      if @seen_notification_ids.include?(nid)
+        next
       end
+      @seen_notification_ids.add(nid)
 
-    rescue => e
-      puts "[봇][pid=#{Process.pid}] 스트리밍 오류: #{e.message}"
-      puts e.backtrace[0..5]
-      sleep 5
-      retry
+      status = notification["status"] || notification[:status]
+      next unless status
+
+      account = status["account"] || status[:account]
+      sender_id = (account["acct"] || account[:acct]).to_s
+
+      content = (status["content"] || status[:content]).to_s
+      clean_content = content.gsub(/<[^>]+>/, '').strip
+
+      puts "[봇][pid=#{Process.pid}] 멘션: #{sender_id} - #{clean_content}"
+
+      begin
+        @command_parser.parse_and_execute(clean_content, status, sender_id)
+      rescue => e
+        puts "[봇][pid=#{Process.pid}] 명령 처리 오류: #{e.message}"
+        puts e.backtrace.first(5)
+      end
     end
+  rescue Interrupt
+    puts "\n[봇][pid=#{Process.pid}] Ctrl+C로 종료 시그널 받음"
+    @battle_timer.stop
+  rescue => e
+    puts "[봇][pid=#{Process.pid}] 에러: #{e.message}"
+    puts e.backtrace.first(10)
+    @battle_timer.stop
   end
 end
 
-# 봇 실행 (기존 유지)
 if __FILE__ == $0
   bot = BattleBot.new
   bot.start
