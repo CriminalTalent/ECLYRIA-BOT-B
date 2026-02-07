@@ -1,5 +1,17 @@
 # 🎮 전투봇 완전 가이드
 
+## 🚀 봇 실행
+
+```bash
+./bot.sh start    # 봇 시작
+./bot.sh stop     # 봇 종료
+./bot.sh restart  # 재시작
+./bot.sh status   # 상태 확인
+./bot.sh log      # 로그 실시간 보기
+```
+
+---
+
 ## 📋 기본 명령어
 
 ### 전투 시작
