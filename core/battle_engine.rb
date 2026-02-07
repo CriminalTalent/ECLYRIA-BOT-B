@@ -8,6 +8,12 @@ class BattleEngine
 
   # 1:1 전투 시작
   def start_1v1(user1_id, user2_id, reply_status)
+    # 자기 자신과의 전투 방지
+    if user1_id == user2_id
+      @mastodon_client.reply(reply_status, "자기 자신과는 전투할 수 없습니다.")
+      return
+    end
+
     # 이미 전투 중인지 확인
     if BattleState.find_by_user(user1_id)
       user1_name = (@sheet_manager.find_user(user1_id) || {})["이름"] || user1_id
@@ -593,6 +599,7 @@ class BattleEngine
         state[:guarded][action[:user_id]] = true
         state[:defend_target_map][action[:target]] = action[:user_id]
       when :counter
+        # 반격: 방어 보너스 없이 반격 데미지만 적용
         state[:counter][action[:user_id]] = true
       end
     end
@@ -871,12 +878,13 @@ class BattleEngine
       state[:guarded_used][defender_id] = true
     end
 
-    if state.dig(:counter, defender_id) && !state.dig(:counter_used, defender_id) && damage > 0
-      counter_damage = 5
-      counter_text = "\n#{defender_name}의 반격 발동! #{attacker_name} 반격 피해: 5"
-
+    if state.dig(:counter, defender_id) && !state.dig(:counter_used, defender_id)
       state[:counter_used] ||= {}
       state[:counter_used][defender_id] = true
+
+      # 반격: 피격 시 무조건 5 데미지 반환 (방어와 관계없이)
+      counter_damage = 5
+      counter_text = "\n#{defender_name}의 반격 발동! #{attacker_name} 반격 피해: 5"
     end
 
     # 대리 방어 표시
