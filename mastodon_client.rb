@@ -49,64 +49,75 @@ class MastodonClient
 
   # 여러 사용자 멘션하면서 답장
   def reply_with_mentions(status_hash, message, user_ids)
+    reply_with_mentions_visibility(status_hash, message, user_ids, "unlisted")
+  end
+
+  # 여러 사용자 멘션하면서 답장 (visibility 지정 가능)
+  def reply_with_mentions_visibility(status_hash, message, user_ids, visibility = "unlisted")
     in_reply_to_id = status_hash["id"] || status_hash[:id]
-    
+
     mentions = user_ids.map { |id| "@#{id}" }.join(' ')
     full_message = "#{mentions}\n#{message}"
-    
+
     # 500자 넘으면 스레드로 분할
     if full_message.length > MAX_TOOT_LENGTH
-      reply_with_mentions_thread(status_hash, message, user_ids)
+      reply_with_mentions_thread_visibility(status_hash, message, user_ids, visibility)
     else
       post("/api/v1/statuses", {
         status: full_message,
         in_reply_to_id: in_reply_to_id,
-        visibility: "unlisted"
+        visibility: visibility
       })
     end
   rescue => e
-    puts "[MastodonClient] reply_with_mentions 실패: #{e.message}"
+    puts "[MastodonClient] reply_with_mentions_visibility 실패: #{e.message}"
     nil
   end
 
   # 긴 메시지를 스레드로 분할해서 발송
   def reply_with_mentions_thread(status_hash, message, user_ids)
+    reply_with_mentions_thread_visibility(status_hash, message, user_ids, "unlisted")
+  end
+
+  # 긴 메시지를 스레드로 분할해서 발송 (visibility 지정 가능)
+  def reply_with_mentions_thread_visibility(status_hash, message, user_ids, visibility = "unlisted")
     in_reply_to_id = status_hash["id"] || status_hash[:id]
     mentions = user_ids.map { |id| "@#{id}" }.join(' ')
     mentions_length = mentions.length + 1  # +1 for newline
-    
+
     # 메시지를 500자 이하 청크로 분할
     chunks = split_message(message, MAX_TOOT_LENGTH - mentions_length)
-    
+
     last_status = nil
     chunks.each_with_index do |chunk, index|
       full_message = "#{mentions}\n#{chunk}"
-      
+
       begin
         result = post("/api/v1/statuses", {
           status: full_message,
           in_reply_to_id: in_reply_to_id,
-          visibility: "unlisted"
+          visibility: visibility
         })
-        
+
         # 다음 메시지는 이전 메시지에 답장
         in_reply_to_id = result["id"] if result
         last_status = result
-        
+
         # API 제한 방지를 위해 0.5초 대기
         sleep 0.5 if index < chunks.length - 1
-        
+
       rescue => e
         puts "[MastodonClient] 스레드 #{index + 1}/#{chunks.length} 발송 실패: #{e.message}"
       end
     end
-    
+
     last_status
   end
 
   def stream(limit: 20, interval: 2, dismiss: false)
     since_id = nil
-    
+    @processed_notifications ||= {}  # 처리된 알림 ID 캐싱
+
     # 봇 시작 시 현재 최신 알림 ID를 since_id로 설정 (이전 알림 무시)
     begin
       initial_notifications = get("/api/v1/notifications", { limit: 1 })
@@ -120,25 +131,50 @@ class MastodonClient
     end
 
     loop do
-      notifications = get("/api/v1/notifications", { limit: limit, since_id: since_id })
-      notifications = notifications.reverse
+      begin
+        notifications = get("/api/v1/notifications", { limit: limit, since_id: since_id })
+        notifications = notifications.reverse
 
-      notifications.each do |n|
-        since_id = n["id"] if since_id.nil? || n["id"].to_i > since_id.to_i
+        notifications.each do |n|
+          notification_id = n["id"]
 
-        yield n
+          # 이미 처리된 알림인지 확인 (중복 방지)
+          if @processed_notifications[notification_id]
+            puts "[MastodonClient] 중복 알림 무시: #{notification_id}"
+            next
+          end
 
-        if dismiss
-          begin
-            post("/api/v1/notifications/#{n['id']}/dismiss", {})
-          rescue => e
-            puts "[MastodonClient] dismiss 실패: #{e.message}"
+          since_id = notification_id if since_id.nil? || notification_id.to_i > since_id.to_i
+
+          # 처리된 알림 ID 캐싱 (최대 1000개 유지)
+          @processed_notifications[notification_id] = Time.now
+          cleanup_processed_notifications if @processed_notifications.size > 1000
+
+          yield n
+
+          if dismiss
+            begin
+              post("/api/v1/notifications/#{notification_id}/dismiss", {})
+            rescue => e
+              puts "[MastodonClient] dismiss 실패: #{e.message}"
+            end
           end
         end
+      rescue => e
+        puts "[MastodonClient] 스트림 처리 오류: #{e.message}"
       end
 
       sleep interval
     end
+  end
+
+  # 오래된 처리된 알림 ID 정리
+  def cleanup_processed_notifications
+    return unless @processed_notifications
+
+    # 30분 이상 지난 알림 ID 삭제
+    cutoff_time = Time.now - 1800
+    @processed_notifications.delete_if { |_id, time| time < cutoff_time }
   end
 
   private
