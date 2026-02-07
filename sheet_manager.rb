@@ -4,9 +4,9 @@ require 'googleauth'
 require 'json'
 
 class SheetManager
-  def initialize
-    @spreadsheet_id = ENV['GOOGLE_SHEET_ID']
-    @credentials_path = ENV['GOOGLE_CREDENTIALS_PATH'] || 'credentials.json'
+  def initialize(spreadsheet_id = nil, credentials_path = nil)
+    @spreadsheet_id = spreadsheet_id || ENV['GOOGLE_SHEET_ID']
+    @credentials_path = credentials_path || ENV['GOOGLE_CREDENTIALS_PATH'] || 'credentials.json'
     
     # Google Sheets API 초기화
     @sheets_service = Google::Apis::SheetsV4::SheetsService.new
