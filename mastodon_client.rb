@@ -1,6 +1,8 @@
 # mastodon_client.rb
 require 'faraday'
 require 'json'
+require 'net/http'
+require 'uri'
 
 class MastodonClient
   MAX_TOOT_LENGTH = 500  # 500자 제한
@@ -181,7 +183,61 @@ class MastodonClient
     @processed_notifications.delete_if { |_id, time| time < cutoff_time }
   end
 
+  # SSE 스트리밍으로 user 스트림 구독
+  def stream_user(&block)
+    uri = URI.parse("#{@base_url}/api/v1/streaming/user")
+
+    Net::HTTP.start(uri.host, uri.port, use_ssl: uri.scheme == 'https') do |http|
+      request = Net::HTTP::Get.new(uri)
+      request['Authorization'] = "Bearer #{@token}"
+      request['Accept'] = 'text/event-stream'
+
+      http.request(request) do |response|
+        buffer = ""
+        event_type = nil
+
+        response.read_body do |chunk|
+          buffer += chunk
+
+          while buffer.include?("\n\n")
+            event_data, buffer = buffer.split("\n\n", 2)
+
+            event_data.each_line do |line|
+              line = line.strip
+              if line.start_with?("event:")
+                event_type = line.sub("event:", "").strip
+              elsif line.start_with?("data:")
+                data = line.sub("data:", "").strip
+
+                if event_type == "notification" && !data.empty?
+                  begin
+                    notification = JSON.parse(data)
+                    if notification["type"] == "mention" && notification["status"]
+                      status = notification["status"]
+                      yield symbolize_keys(status)
+                    end
+                  rescue JSON::ParserError => e
+                    puts "[MastodonClient] JSON 파싱 오류: #{e.message}"
+                  end
+                end
+              end
+            end
+          end
+        end
+      end
+    end
+  end
+
   private
+
+  def symbolize_keys(hash)
+    return hash unless hash.is_a?(Hash)
+    hash.each_with_object({}) do |(key, value), result|
+      new_key = key.is_a?(String) ? key.to_sym : key
+      new_value = value.is_a?(Hash) ? symbolize_keys(value) : value
+      result[new_key] = new_value
+    end
+  end
 
   # 메시지를 자연스럽게 분할 (줄바꿈 기준)
   def split_message(message, max_length)
