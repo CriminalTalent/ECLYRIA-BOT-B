@@ -55,7 +55,7 @@ end
 # ---------------------------------
 # Mastodon 연결 + 계정 확인
 # ---------------------------------
-mastodon = MastodonClient.new(base_url: BASE_URL, token: TOKEN)
+mastodon = MastodonClient.new(BASE_URL, TOKEN)
 
 begin
   acct = mastodon.verify_credentials

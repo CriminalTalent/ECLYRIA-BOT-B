@@ -12,9 +12,13 @@ class MastodonClient
     @conn = Faraday.new(url: @base_url) do |f|
       f.request :url_encoded
       f.response :raise_error
-      f.response :follow_redirects
       f.adapter Faraday.default_adapter
     end
+  end
+
+  def verify_credentials
+    result = get("/api/v1/accounts/verify_credentials")
+    result["acct"] || result["username"]
   end
 
   def get(path, params = {})

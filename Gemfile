@@ -2,7 +2,7 @@
 source 'https://rubygems.org'
 
 # Mastodon API
-gem 'mastodon-api', '~> 2.1'
+gem 'mastodon-api', '~> 2.0'
 
 # Google Sheets API
 gem 'google-api-client', '~> 0.53'
