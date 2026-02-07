@@ -1,129 +1,103 @@
 class BattleState
   @battles = {}
   @mutex = Mutex.new
-  
-  GM_ACCOUNTS = ['Story', 'professor', 'Store', 'FortunaeFons'].freeze
 
-  def self.create(participants, state_data)
+  def self.create(participants, data = {})
+    battle_id = generate_battle_id(participants)
+    
     @mutex.synchronize do
-      battle_id = generate_battle_id(participants)
-      @battles[battle_id] = state_data.merge(
-        battle_id: battle_id,
+      @battles[battle_id] = data.merge(
+        participants: participants,
+        created_at: Time.now,
         start_time: Time.now,
         last_action_time: Time.now
       )
-      battle_id
     end
+    
+    battle_id
   end
 
   def self.get(battle_id)
-    @mutex.synchronize do
-      @battles[battle_id]
-    end
+    @mutex.synchronize { @battles[battle_id] }
   end
 
-  def self.find_by_user(user_id)
-    return nil if GM_ACCOUNTS.include?(user_id)
-    
-    @mutex.synchronize do
-      @battles.values.find { |state| state[:participants].include?(user_id) }
-    end
-  end
-
-  def self.find_battle_id_by_user(user_id)
-    return nil if GM_ACCOUNTS.include?(user_id)
-    
-    @mutex.synchronize do
-      battle = @battles.find { |id, state| state[:participants].include?(user_id) }
-      battle ? battle[0] : nil
-    end
-  end
-
-  def self.find_battle_by_participants(participant_list)
-    @mutex.synchronize do
-      @battles.find do |id, state|
-        participant_list.all? { |p| state[:participants].include?(p) }
-      end&.first
-    end
-  end
-
-  def self.player_in_battle?(user_id)
-    return false if GM_ACCOUNTS.include?(user_id)
-    
-    @mutex.synchronize do
-      @battles.values.any? { |state| state[:participants].include?(user_id) }
-    end
-  end
-
-  def self.update(battle_id, updates)
+  def self.update(battle_id, data)
     @mutex.synchronize do
       if @battles[battle_id]
-        @battles[battle_id].merge!(updates)
-        @battles[battle_id][:last_action_time] = Time.now if updates.keys.any? { |k| [:current_turn, :actions_queue].include?(k) }
+        @battles[battle_id].merge!(data)
       end
     end
   end
 
   def self.clear(battle_id)
+    @mutex.synchronize { @battles.delete(battle_id) }
+  end
+
+  def self.find_battle_id_by_user(user_id)
     @mutex.synchronize do
-      @battles.delete(battle_id)
+      @battles.find { |id, state| state[:participants].include?(user_id) }&.first
     end
   end
 
-  def self.clear_all
+  def self.find_by_user(user_id)
+    battle_id = find_battle_id_by_user(user_id)
+    battle_id ? get(battle_id) : nil
+  end
+
+  def self.find_battle_by_participants(participants)
     @mutex.synchronize do
-      @battles.clear
+      @battles.find do |id, state|
+        state[:participants].sort == participants.sort
+      end&.first
     end
   end
 
   def self.all_battles
-    @mutex.synchronize do
-      @battles.dup
-    end
+    @mutex.synchronize { @battles.dup }
   end
 
-  def self.count
-    @mutex.synchronize do
-      @battles.size
-    end
-  end
-
-  # 시간 초과 체크
-  def self.check_timeouts
+  def self.cleanup_stalled_battles
+    now = Time.now
+    stalled = []
+    
     @mutex.synchronize do
       @battles.each do |battle_id, state|
-        turn_elapsed = Time.now - state[:last_action_time]
-        battle_elapsed = Time.now - state[:start_time]
-        
-        # 턴 시간 초과 (4분)
-        if turn_elapsed > 240
-          state[:timeout_turn] = true
-        end
-        
-        # 전투 시간 초과 (1시간)
-        if battle_elapsed > 3600
-          state[:timeout_battle] = true
+        # 2시간 이상 된 전투는 자동 삭제
+        if now - state[:created_at] > 7200
+          stalled << battle_id
         end
       end
+      
+      stalled.each { |id| @battles.delete(id) }
     end
+    
+    stalled.length
   end
 
-  # 멈춘 전투 정리 (2시간 이상 액션 없음)
-  def self.cleanup_stalled_battles
+  def self.check_timeouts
+    now = Time.now
+    timeout_battles = []
+    
     @mutex.synchronize do
-      now = Time.now
-      @battles.delete_if do |battle_id, state|
-        (now - state[:last_action_time]) > 7200
+      @battles.each do |battle_id, state|
+        # 전체 전투 1시간 초과
+        if now - state[:start_time] > 3600
+          timeout_battles << { id: battle_id, type: :battle_timeout }
+        # 턴 4분 초과
+        elsif state[:last_action_time] && now - state[:last_action_time] > 240
+          timeout_battles << { id: battle_id, type: :turn_timeout }
+        end
       end
     end
+    
+    timeout_battles
   end
 
   private
 
   def self.generate_battle_id(participants)
-    sorted = participants.sort.join('_')
     timestamp = Time.now.to_i
-    random = rand(10000)
-    "battle_#{sorted}_#{timestamp}_#{random}"
+    random = rand(1000..9999)
+    "battle_#{participants.join('_')}_#{timestamp}_#{random}"
   end
 end
