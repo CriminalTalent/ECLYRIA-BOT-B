@@ -610,7 +610,7 @@ class BattleEngine
     # 민첩성 순으로 정렬
     attack_actions.sort_by! do |action|
       user = @sheet_manager.find_user(action[:user_id])
-      -(user["민첩성"] || 0).to_i
+      -(user ? (user["민첩성"] || 0).to_i : 0)
     end
 
     attack_actions.each do |action|

@@ -41,8 +41,8 @@ class SheetManager
     Time.now - @cache_time[key] < CACHE_TTL
   end
 
-  # update cache
-  def refresh_cache
+  # update cache (with retry on quota error)
+  def refresh_cache(retry_count = 0)
     @mutex.synchronize do
       begin
         # 스탯 시트
@@ -59,6 +59,15 @@ class SheetManager
 
         puts "[SheetManager] 캐시 갱신 완료"
         true
+      rescue Google::Apis::RateLimitError, Google::Apis::ClientError => e
+        if e.message.include?("RESOURCE_EXHAUSTED") && retry_count < 3
+          wait_time = (retry_count + 1) * 10  # 10초, 20초, 30초
+          puts "[SheetManager] 할당량 초과, #{wait_time}초 후 재시도 (#{retry_count + 1}/3)"
+          sleep wait_time
+          return refresh_cache(retry_count + 1)
+        end
+        puts "[SheetManager] 캐시 갱신 오류: #{e.message}"
+        false
       rescue => e
         puts "[SheetManager] 캐시 갱신 오류: #{e.message}"
         false
