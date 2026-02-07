@@ -1,10 +1,3 @@
-cd /root/mastodon_bots/battle_bot
-
-# 1️⃣ 현재 mastodon_client.rb 확인
-head -20 mastodon_client.rb
-
-# 2️⃣ 만약 여전히 망가져있다면 다시 교체
-cat > mastodon_client.rb << 'ENDFILE'
 # mastodon_client.rb
 require 'faraday'
 require 'json'
@@ -18,6 +11,7 @@ class MastodonClient
 
     @conn = Faraday.new(url: @base_url) do |f|
       f.request :url_encoded
+      f.response :raise_error
       f.response :follow_redirects
       f.adapter Faraday.default_adapter
     end
@@ -42,13 +36,7 @@ class MastodonClient
   end
 
   def reply(status_hash, message)
-    in_reply_to_id =
-      if status_hash.is_a?(String) || status_hash.is_a?(Integer)
-        status_hash
-      else
-        status_hash["id"] || status_hash[:id]
-      end
-
+    in_reply_to_id = status_hash["id"] || status_hash[:id]
     post("/api/v1/statuses", {
       status: message,
       in_reply_to_id: in_reply_to_id,
@@ -59,12 +47,14 @@ class MastodonClient
     nil
   end
 
+  # 여러 사용자 멘션하면서 답장
   def reply_with_mentions(status_hash, message, user_ids)
     in_reply_to_id = status_hash["id"] || status_hash[:id]
     
     mentions = user_ids.map { |id| "@#{id}" }.join(' ')
     full_message = "#{mentions}\n#{message}"
     
+    # 500자 넘으면 스레드로 분할
     if full_message.length > MAX_TOOT_LENGTH
       reply_with_mentions_thread(status_hash, message, user_ids)
     else
@@ -79,11 +69,13 @@ class MastodonClient
     nil
   end
 
+  # 긴 메시지를 스레드로 분할해서 발송
   def reply_with_mentions_thread(status_hash, message, user_ids)
     in_reply_to_id = status_hash["id"] || status_hash[:id]
     mentions = user_ids.map { |id| "@#{id}" }.join(' ')
-    mentions_length = mentions.length + 1
+    mentions_length = mentions.length + 1  # +1 for newline
     
+    # 메시지를 500자 이하 청크로 분할
     chunks = split_message(message, MAX_TOOT_LENGTH - mentions_length)
     
     last_status = nil
@@ -97,9 +89,11 @@ class MastodonClient
           visibility: "unlisted"
         })
         
+        # 다음 메시지는 이전 메시지에 답장
         in_reply_to_id = result["id"] if result
         last_status = result
         
+        # API 제한 방지를 위해 0.5초 대기
         sleep 0.5 if index < chunks.length - 1
         
       rescue => e
@@ -113,6 +107,7 @@ class MastodonClient
   def stream(limit: 20, interval: 2, dismiss: false)
     since_id = nil
     
+    # 봇 시작 시 현재 최신 알림 ID를 since_id로 설정 (이전 알림 무시)
     begin
       initial_notifications = get("/api/v1/notifications", { limit: 1 })
       if initial_notifications.any?
@@ -148,6 +143,7 @@ class MastodonClient
 
   private
 
+  # 메시지를 자연스럽게 분할 (줄바꿈 기준)
   def split_message(message, max_length)
     return [message] if message.length <= max_length
     
@@ -157,9 +153,12 @@ class MastodonClient
     lines = message.split("\n")
     
     lines.each do |line|
+      # 한 줄이 max_length보다 길면 강제 분할
       if line.length > max_length
+        # 현재 청크가 있으면 저장
         chunks << current_chunk.strip if current_chunk.length > 0
         
+        # 긴 줄을 강제 분할
         while line.length > 0
           chunks << line[0...max_length]
           line = line[max_length..-1] || ""
@@ -167,6 +166,7 @@ class MastodonClient
         
         current_chunk = ""
       else
+        # 현재 청크에 추가했을 때 max_length를 넘으면
         if (current_chunk + "\n" + line).length > max_length
           chunks << current_chunk.strip if current_chunk.length > 0
           current_chunk = line
@@ -176,22 +176,9 @@ class MastodonClient
       end
     end
     
+    # 마지막 청크 추가
     chunks << current_chunk.strip if current_chunk.length > 0
     
     chunks
   end
 end
-ENDFILE
-
-# 3️⃣ 문법 검사
-ruby -c mastodon_client.rb
-
-# 4️⃣ PM2 로그 완전 삭제
-pm2 flush
-
-# 5️⃣ PM2 재시작
-pm2 restart battle_bot
-
-# 6️⃣ 새 로그 확인
-sleep 3
-pm2 logs battle_bot --lines 20
