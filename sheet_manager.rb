@@ -4,7 +4,7 @@ require 'googleauth'
 require 'json'
 
 class SheetManager
-  CACHE_TTL = 30  # cache TTL (seconds)
+  CACHE_TTL = 60  # 캐시 유효 시간 (초) - 할당량 초과 방지
 
   def initialize(spreadsheet_id = nil, credentials_path = nil)
     @spreadsheet_id = spreadsheet_id || ENV['GOOGLE_SHEET_ID']
@@ -43,35 +43,34 @@ class SheetManager
 
   # update cache (with retry on quota error)
   def refresh_cache(retry_count = 0)
-    @mutex.synchronize do
-      begin
-        # 스탯 시트
-        stats_range = "'스탯'!A2:H1000"
-        stats_response = @sheets_service.get_spreadsheet_values(@spreadsheet_id, stats_range)
+    begin
+      stats_range = "'스탯'!A2:H1000"
+      stats_response = @sheets_service.get_spreadsheet_values(@spreadsheet_id, stats_range)
+
+      user_range = "'사용자'!A2:D1000"
+      user_response = @sheets_service.get_spreadsheet_values(@spreadsheet_id, user_range)
+
+      @mutex.synchronize do
         @cache[:stats] = stats_response.values || []
         @cache_time[:stats] = Time.now
-
-        # 사용자 시트
-        user_range = "'사용자'!A2:D1000"
-        user_response = @sheets_service.get_spreadsheet_values(@spreadsheet_id, user_range)
         @cache[:users] = user_response.values || []
         @cache_time[:users] = Time.now
-
-        puts "[SheetManager] 캐시 갱신 완료"
-        true
-      rescue Google::Apis::RateLimitError, Google::Apis::ClientError => e
-        if e.message.include?("RESOURCE_EXHAUSTED") && retry_count < 3
-          wait_time = (retry_count + 1) * 10  # 10초, 20초, 30초
-          puts "[SheetManager] 할당량 초과, #{wait_time}초 후 재시도 (#{retry_count + 1}/3)"
-          sleep wait_time
-          return refresh_cache(retry_count + 1)
-        end
-        puts "[SheetManager] 캐시 갱신 오류: #{e.message}"
-        false
-      rescue => e
-        puts "[SheetManager] 캐시 갱신 오류: #{e.message}"
-        false
       end
+
+      puts "[SheetManager] 캐시 갱신 완료"
+      true
+    rescue Google::Apis::RateLimitError, Google::Apis::ClientError => e
+      if e.message.include?("RESOURCE_EXHAUSTED") && retry_count < 3
+        wait_time = (retry_count + 1) * 20  # 20초, 40초, 60초
+        puts "[SheetManager] 할당량 초과, #{wait_time}초 후 재시도 (#{retry_count + 1}/3)"
+        sleep wait_time
+        return refresh_cache(retry_count + 1)
+      end
+      puts "[SheetManager] 캐시 갱신 실패: #{e.message}"
+      false
+    rescue => e
+      puts "[SheetManager] 캐시 갱신 오류: #{e.message}"
+      false
     end
   end
 
