@@ -187,38 +187,43 @@ class MastodonClient
   def stream_user(&block)
     uri = URI.parse("#{@base_url}/api/v1/streaming/user")
 
-    Net::HTTP.start(uri.host, uri.port, use_ssl: uri.scheme == 'https') do |http|
-      request = Net::HTTP::Get.new(uri)
-      request['Authorization'] = "Bearer #{@token}"
-      request['Accept'] = 'text/event-stream'
+    http = Net::HTTP.new(uri.host, uri.port)
+    http.use_ssl = (uri.scheme == 'https')
+    http.read_timeout = 300
+    http.open_timeout = 30
+    http.keep_alive_timeout = 30
 
-      http.request(request) do |response|
-        buffer = ""
-        event_type = nil
+    request = Net::HTTP::Get.new(uri)
+    request['Authorization'] = "Bearer #{@token}"
+    request['Accept'] = 'text/event-stream'
+    request['Connection'] = 'keep-alive'
 
-        response.read_body do |chunk|
-          buffer += chunk
+    http.request(request) do |response|
+      buffer = ""
+      event_type = nil
 
-          while buffer.include?("\n\n")
-            event_data, buffer = buffer.split("\n\n", 2)
+      response.read_body do |chunk|
+        buffer += chunk
 
-            event_data.each_line do |line|
-              line = line.strip
-              if line.start_with?("event:")
-                event_type = line.sub("event:", "").strip
-              elsif line.start_with?("data:")
-                data = line.sub("data:", "").strip
+        while buffer.include?("\n\n")
+          event_data, buffer = buffer.split("\n\n", 2)
 
-                if event_type == "notification" && !data.empty?
-                  begin
-                    notification = JSON.parse(data)
-                    if notification["type"] == "mention" && notification["status"]
-                      status = notification["status"]
-                      yield symbolize_keys(status)
-                    end
-                  rescue JSON::ParserError => e
-                    puts "[MastodonClient] JSON 파싱 오류: #{e.message}"
+          event_data.each_line do |line|
+            line = line.strip
+            if line.start_with?("event:")
+              event_type = line.sub("event:", "").strip
+            elsif line.start_with?("data:")
+              data = line.sub("data:", "").strip
+
+              if event_type == "notification" && !data.empty?
+                begin
+                  notification = JSON.parse(data)
+                  if notification["type"] == "mention" && notification["status"]
+                    status = notification["status"]
+                    yield symbolize_keys(status)
                   end
+                rescue JSON::ParserError => e
+                  puts "[MastodonClient] JSON 파싱 오류: #{e.message}"
                 end
               end
             end
