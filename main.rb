@@ -109,7 +109,7 @@ loop do
         sender = status.dig(:account, :acct) || "unknown"
         puts "[스트리밍] #{mention_id} - @#{sender}"
 
-        parser.parse(status)
+        parser.handle(status)
 
       rescue => e
         puts "[에러] 멘션 처리 오류: #{e.class}: #{e.message}"
