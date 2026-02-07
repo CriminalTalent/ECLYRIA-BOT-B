@@ -39,6 +39,8 @@ Thumbs.db
 # Logs
 *.log
 log/
+logs/
+bot.pid
 
 # Java (if any)
 *.jar
