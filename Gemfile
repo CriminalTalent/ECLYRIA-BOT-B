@@ -5,7 +5,7 @@ source 'https://rubygems.org'
 gem 'mastodon-api', '~> 2.0'
 
 # Google Sheets API
-gem 'google-api-client', '~> 0.53'
+gem 'google-apis-sheets_v4', '~> 0.28'
 gem 'googleauth', '~> 1.3'
 
 # 스케줄러 (자정 데미지)
