@@ -1,6 +1,12 @@
 require_relative 'battle_state'
 
 class BattleEngine
+  # 팀명 상수
+  TEAM_NAMES = {
+    team1: "불사조 기사단",
+    team2: "이그드라실"
+  }
+
   def initialize(mastodon_client, sheet_manager)
     @mastodon_client = mastodon_client
     @sheet_manager   = sheet_manager
@@ -104,22 +110,31 @@ class BattleEngine
     team2_agi = team2.sum { |id| (users[ids.index(id)]["민첩성"] || 10).to_i } + rand(1..20)
 
     # 선공 팀 결정
+    first_team_key = team1_agi >= team2_agi ? :team1 : :team2
     first_team = team1_agi >= team2_agi ? team1 : team2
     second_team = team1_agi >= team2_agi ? team2 : team1
-    turn_order = first_team + second_team
+
+    # 각 팀 내에서 민첩성 순으로 정렬
+    first_team_sorted = first_team.sort_by { |id| -(users[ids.index(id)]["민첩성"] || 10).to_i }
+    second_team_sorted = second_team.sort_by { |id| -(users[ids.index(id)]["민첩성"] || 10).to_i }
+    turn_order = first_team_sorted + second_team_sorted
 
     names = ids.map { |id| (users[ids.index(id)]["이름"] || id) }
+
+    # 첫 번째 차례 (선공팀 중 민첩성 1위)
+    first_player_id = turn_order[0]
+    first_player_name = users[ids.index(first_player_id)]["이름"] || first_player_id
 
     # DM 여부 확인
     visibility = get_visibility(reply_status)
 
     message = "━━━━━━━━━━━━━━━━━━\n"
     message += "팀전투 시작: #{names[0]}, #{names[1]} vs #{names[2]}, #{names[3]}\n"
-    message += "선공: 팀#{team1_agi >= team2_agi ? '1' : '2'} (민첩 #{[team1_agi, team2_agi].max})\n"
+    message += "선공: #{TEAM_NAMES[first_team_key]} (민첩 #{[team1_agi, team2_agi].max})\n"
     message += "━━━━━━━━━━━━━━━━━━\n"
     message += "제한시간: 1인당 4분, 전체 1시간\n"
     message += "━━━━━━━━━━━━━━━━━━\n"
-    message += "모든 참가자는 행동을 선택하세요!\n"
+    message += "#{first_player_name}의 차례\n"
     message += "[공격/@타겟] [방어/@타겟] [반격] [물약사용/크기/@타겟]"
 
     result = reply_with_mentions_to_battle(reply_status, message, ids, visibility)
@@ -169,24 +184,33 @@ class BattleEngine
     team1_agi = team1.sum { |id| (@sheet_manager.find_user(id)["민첩성"] || 10).to_i } + rand(1..20)
     team2_agi = team2.sum { |id| (@sheet_manager.find_user(id)["민첩성"] || 10).to_i } + rand(1..20)
 
+    first_team_key = team1_agi >= team2_agi ? :team1 : :team2
     first_team = team1_agi >= team2_agi ? team1 : team2
     second_team = team1_agi >= team2_agi ? team2 : team1
-    turn_order = first_team + second_team
+
+    # 각 팀 내에서 민첩성 순으로 정렬
+    first_team_sorted = first_team.sort_by { |id| -(@sheet_manager.find_user(id)["민첩성"] || 10).to_i }
+    second_team_sorted = second_team.sort_by { |id| -(@sheet_manager.find_user(id)["민첩성"] || 10).to_i }
+    turn_order = first_team_sorted + second_team_sorted
 
     names = ids.map { |id| (@sheet_manager.find_user(id)["이름"] || id) }
+
+    # 첫 번째 차례 (선공팀 중 민첩성 1위)
+    first_player_id = turn_order[0]
+    first_player_name = @sheet_manager.find_user(first_player_id)["이름"] || first_player_id
 
     # DM 여부 확인
     visibility = get_visibility(reply_status)
 
     message = "━━━━━━━━━━━━━━━━━━\n"
     message += "대규모전투 시작!\n"
-    message += "팀1: #{names[0..3].join(', ')}\n"
-    message += "팀2: #{names[4..7].join(', ')}\n"
-    message += "선공: 팀#{team1_agi >= team2_agi ? '1' : '2'} (민첩 #{[team1_agi, team2_agi].max})\n"
+    message += "#{TEAM_NAMES[:team1]}: #{names[0..3].join(', ')}\n"
+    message += "#{TEAM_NAMES[:team2]}: #{names[4..7].join(', ')}\n"
+    message += "선공: #{TEAM_NAMES[first_team_key]} (민첩 #{[team1_agi, team2_agi].max})\n"
     message += "━━━━━━━━━━━━━━━━━━\n"
     message += "제한시간: 1인당 4분, 전체 1시간\n"
     message += "━━━━━━━━━━━━━━━━━━\n"
-    message += "모든 참가자는 행동을 선택하세요!\n"
+    message += "#{first_player_name}의 차례\n"
     message += "[공격/@타겟] [방어/@타겟] [반격] [물약사용/크기/@타겟]"
 
     result = reply_with_mentions_to_battle(reply_status, message, ids, visibility)
@@ -401,14 +425,14 @@ class BattleEngine
       end
 
       message += "팀별 체력 총합:\n"
-      message += "팀1: #{team1_hp}HP\n"
-      message += "팀2: #{team2_hp}HP\n"
+      message += "#{TEAM_NAMES[:team1]}: #{team1_hp}HP\n"
+      message += "#{TEAM_NAMES[:team2]}: #{team2_hp}HP\n"
       message += "━━━━━━━━━━━━━━━━━━\n"
 
       if team1_hp > team2_hp
-        message += "팀1 승리! (체력 총합)"
+        message += "#{TEAM_NAMES[:team1]} 승리! (체력 총합)"
       elsif team2_hp > team1_hp
-        message += "팀2 승리! (체력 총합)"
+        message += "#{TEAM_NAMES[:team2]} 승리! (체력 총합)"
       else
         message += "무승부!"
       end
@@ -541,17 +565,21 @@ class BattleEngine
       process_round(battle_id, state)
     else
       acted_users = state[:actions_queue].map { |a| a[:user_id] }
-      waiting = alive_participants.reject { |pid| acted_users.include?(pid) }
-
-      waiting_names = waiting.map { |pid| (@sheet_manager.find_user(pid) || {})["이름"] || pid }
+      # turn_order 순서대로 아직 행동하지 않은 생존자 찾기
+      waiting_ordered = state[:turn_order].select do |pid|
+        alive_participants.include?(pid) && !acted_users.include?(pid)
+      end
 
       if state[:type] == "1v1"
         # 1:1: "{이름}의 차례" 형식
-        message += "#{waiting_names.first}의 차례\n"
+        next_player_name = (@sheet_manager.find_user(waiting_ordered.first) || {})["이름"] || waiting_ordered.first
+        message += "#{next_player_name}의 차례\n"
         message += "[공격] [방어] [반격] [물약사용/크기]"
       else
-        # 팀전투: "대기 중: {이름들}" 형식
-        message += "대기 중: #{waiting_names.join(', ')}\n"
+        # 팀전투: 다음 차례인 한 명만 표시
+        next_player_id = waiting_ordered.first
+        next_player_name = (@sheet_manager.find_user(next_player_id) || {})["이름"] || next_player_id
+        message += "#{next_player_name}의 차례\n"
         message += "[공격/@타겟] [방어/@타겟] [반격] [물약사용/크기/@타겟]"
       end
 
@@ -674,7 +702,7 @@ class BattleEngine
       end
     else
       # 팀전투 체력 표시
-      message2 += "팀1:\n"
+      message2 += "#{TEAM_NAMES[:team1]}:\n"
       state[:teams][:team1].each do |pid|
         user = @sheet_manager.find_user(pid)
         next unless user
@@ -688,7 +716,7 @@ class BattleEngine
         message2 += "- #{user_name}: #{hp_bar} #{current_hp}/#{max_hp} #{status}\n"
       end
 
-      message2 += "\n팀2:\n"
+      message2 += "\n#{TEAM_NAMES[:team2]}:\n"
       state[:teams][:team2].each do |pid|
         user = @sheet_manager.find_user(pid)
         next unless user
@@ -746,12 +774,12 @@ class BattleEngine
         BattleState.clear(battle_id)
         return
       elsif team1_alive == 0
-        message2 += "팀2 승리!"
+        message2 += "#{TEAM_NAMES[:team2]} 승리!"
         reply_to_battle_thread(message2, battle_id, state)
         BattleState.clear(battle_id)
         return
       elsif team2_alive == 0
-        message2 += "팀1 승리!"
+        message2 += "#{TEAM_NAMES[:team1]} 승리!"
         reply_to_battle_thread(message2, battle_id, state)
         BattleState.clear(battle_id)
         return
@@ -769,18 +797,19 @@ class BattleEngine
     state[:last_action_time] = Time.now
     BattleState.update(battle_id, state)
 
-    if state[:type] == "1v1"
-      # 1:1: 선공자 차례 표시
-      first_player_id = state[:turn_order][0]
-      first_player = @sheet_manager.find_user(first_player_id)
-      first_player_name = first_player ? (first_player["이름"] || first_player_id) : first_player_id
+    # 다음 라운드 첫 번째 차례: turn_order에서 생존자 중 첫 번째
+    alive_next = get_alive_participants(state)
+    first_alive_in_order = state[:turn_order].find { |pid| alive_next.include?(pid) }
+    first_player = @sheet_manager.find_user(first_alive_in_order)
+    first_player_name = first_player ? (first_player["이름"] || first_alive_in_order) : first_alive_in_order
 
+    if state[:type] == "1v1"
       message2 += "다음 라운드 시작\n"
       message2 += "#{first_player_name}의 차례\n"
       message2 += "[공격] [방어] [반격] [물약사용/크기]"
     else
       message2 += "라운드 #{state[:round]} 시작\n"
-      message2 += "모든 참가자는 행동을 선택하세요!\n"
+      message2 += "#{first_player_name}의 차례\n"
       message2 += "[공격/@타겟] [방어/@타겟] [반격] [물약사용/크기/@타겟]"
     end
 
