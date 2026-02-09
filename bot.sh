@@ -14,7 +14,7 @@ case "$1" in
     if [ -f "$PID_FILE" ] && kill -0 $(cat "$PID_FILE") 2>/dev/null; then
       echo "봇이 이미 실행 중입니다. (PID: $(cat $PID_FILE))"
     else
-      nohup bundle exec ruby main.rb > "$LOG_FILE" 2>&1 &
+      nohup bundle exec ruby main.rb >> "$LOG_FILE" 2>&1 &
       echo $! > "$PID_FILE"
       echo "봇 시작됨 (PID: $!)"
     fi
