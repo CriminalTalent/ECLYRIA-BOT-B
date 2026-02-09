@@ -6,6 +6,7 @@ require_relative 'commands/gm_battle_command'
 
 class CommandParser
   GM_ACCOUNTS = ['Story', 'professor', 'Store', 'FortunaeFons'].freeze
+  BOT_ACCOUNTS = ['Battle'].freeze  # 봇 계정 (자기 자신 무시용)
 
   def initialize(mastodon_client, sheet_manager)
     @mastodon_client = mastodon_client
@@ -27,7 +28,13 @@ class CommandParser
 
   def parse(text, user_id, reply_status)
     text = text.strip
-    
+
+    # 봇 자신의 요청은 무시
+    if BOT_ACCOUNTS.include?(user_id)
+      puts "[무시] 봇 자신의 요청: #{text}"
+      return
+    end
+
     puts "[전투봇] 명령 수신: #{text} (from @#{user_id})"
 
     # 평상시 물약 사용 - [물약/크기]
