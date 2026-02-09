@@ -87,28 +87,15 @@ class CommandParser
       return
     end
 
-    # 1:1 전투 개시 - [전투/@상대]
-    if text =~ /\[전투\s*\/\s*(@?\w+)\s*\]$/i
-      target = $1.gsub('@', '').strip
-      
-      if GM_ACCOUNTS.include?(user_id)
-        @mastodon_client.reply(reply_status, "GM은 [전투/@A/@B] 형식으로 두 플레이어를 지정해야 합니다.")
-        return
-      end
-      
-      @battle_command.start_1v1(user_id, target, reply_status)
-      return
-    end
-
-    # GM 1:1 전투 개시 - [전투/@A/@B]
-    if text =~ /\[전투\s*\/\s*(@?\w+)\s*\/\s*(@?\w+)\s*\]$/i
+    # GM 1:1 전투 개시 - [전투/@A/@B] (2인 패턴 먼저 체크)
+    if (match = text.match(/\[전투\s*\/\s*(@?\w+)\s*\/\s*(@?\w+)\s*\]$/i))
       unless GM_ACCOUNTS.include?(user_id)
         @mastodon_client.reply(reply_status, "일반 사용자는 [전투/@상대] 형식을 사용하세요.")
         return
       end
 
-      player1 = $1.gsub('@', '').strip
-      player2 = $2.gsub('@', '').strip
+      player1 = match[1].gsub('@', '').strip
+      player2 = match[2].gsub('@', '').strip
       puts "[GM전투] GM #{user_id}가 1:1 전투 개설 시도: #{player1} vs #{player2}"
       begin
         @battle_command.start_1v1(player1, player2, reply_status)
@@ -118,6 +105,19 @@ class CommandParser
         puts e.backtrace.first(10).join("\n")
         raise e
       end
+      return
+    end
+
+    # 1:1 전투 개시 - [전투/@상대]
+    if (match = text.match(/\[전투\s*\/\s*(@?\w+)\s*\]$/i))
+      target = match[1].gsub('@', '').strip
+
+      if GM_ACCOUNTS.include?(user_id)
+        @mastodon_client.reply(reply_status, "GM은 [전투/@A/@B] 형식으로 두 플레이어를 지정해야 합니다.")
+        return
+      end
+
+      @battle_command.start_1v1(user_id, target, reply_status)
       return
     end
 
