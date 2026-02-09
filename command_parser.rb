@@ -6,7 +6,7 @@ require_relative 'commands/gm_battle_command'
 
 class CommandParser
   GM_ACCOUNTS = ['Story', 'professor', 'Store', 'FortunaeFons'].freeze
-  BOT_ACCOUNTS = ['Battle'].freeze  # 봇 계정 (자기 자신 무시용)
+  BOT_ACCOUNTS = ['Battle'].freeze  # 봇 계정
 
   def initialize(mastodon_client, sheet_manager)
     @mastodon_client = mastodon_client
@@ -95,7 +95,7 @@ class CommandParser
     end
 
     # GM 1:1 전투 개시 - [전투/@A/@B] (2인 패턴 먼저 체크)
-    if (match = text.match(/\[전투\s*\/\s*(@?\w+)\s*\/\s*(@?\w+)\s*\]$/i))
+    if (match = text.match(/\[전투\s*\/\s*(@?\w+)\s*\/\s*(@?\w+)\s*\]/i))
       unless GM_ACCOUNTS.include?(user_id)
         @mastodon_client.reply(reply_status, "일반 사용자는 [전투/@상대] 형식을 사용하세요.")
         return
@@ -116,7 +116,7 @@ class CommandParser
     end
 
     # 1:1 전투 개시 - [전투/@상대]
-    if (match = text.match(/\[전투\s*\/\s*(@?\w+)\s*\]$/i))
+    if (match = text.match(/\[전투\s*\/\s*(@?\w+)\s*\]/i))
       target = match[1].gsub('@', '').strip
 
       if GM_ACCOUNTS.include?(user_id)

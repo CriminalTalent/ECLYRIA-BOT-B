@@ -96,7 +96,11 @@ loop do
 
         mention_id = status[:id]
         next if mention_id.nil?
-        next if processed.include?(mention_id)
+
+        if processed.include?(mention_id)
+          puts "[중복감지] 이미 처리된 mention_id: #{mention_id}"
+          next
+        end
 
         created_at = status[:created_at]
         if created_at
