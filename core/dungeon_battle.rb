@@ -111,7 +111,7 @@ class DungeonBattle
     # HP 업데이트
     current_hp = (player["HP"] || 100).to_i
     new_hp = [current_hp - damage, 0].max
-    @sheet_manager.update_user(player_id, { hp: new_hp })
+    @sheet_manager.update_user(player_id, { "HP" => new_hp })
     
     {
       enemy_name: enemy[:name],

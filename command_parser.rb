@@ -6,6 +6,7 @@ require_relative 'commands/gm_battle_command'
 
 class CommandParser
   GM_ACCOUNTS = ['Story', 'professor', 'Store', 'FortunaeFons'].freeze
+  BOT_ACCOUNTS = ['Battle'].freeze  # 봇 계정
 
   def initialize(mastodon_client, sheet_manager)
     @mastodon_client = mastodon_client
@@ -21,13 +22,19 @@ class CommandParser
   def handle(status)
     content = status[:content]
     text = content.gsub(/<[^>]+>/, '').strip
-    user_id = status[:account][:acct]
+    user_id = status[:account][:acct].to_s.strip
     parse(text, user_id, status)
   end
 
   def parse(text, user_id, reply_status)
     text = text.strip
-    
+
+    # 봇 자신의 요청은 무시
+    if BOT_ACCOUNTS.include?(user_id)
+      puts "[무시] 봇 자신의 요청: #{text}"
+      return
+    end
+
     puts "[전투봇] 명령 수신: #{text} (from @#{user_id})"
 
     # 평상시 물약 사용 - [물약/크기]
@@ -87,34 +94,42 @@ class CommandParser
       return
     end
 
-    # 1:1 전투 개시 - [전투/@상대]
-    if text =~ /\[전투\/(@?\w+)\]$/i
-      target = $1.gsub('@', '').strip
-      
-      if GM_ACCOUNTS.include?(user_id)
-        @mastodon_client.reply(reply_status, "GM은 [전투/@A/@B] 형식으로 두 플레이어를 지정해야 합니다.")
-        return
-      end
-      
-      @battle_command.start_1v1(user_id, target, reply_status)
-      return
-    end
-
-    # GM 1:1 전투 개시 - [전투/@A/@B]
-    if text =~ /\[전투\/(@?\w+)\/(@?\w+)\]$/i
+    # GM 1:1 전투 개시 - [전투/@A/@B] (2인 패턴 먼저 체크)
+    if (match = text.match(/\[전투\s*\/\s*(@?\w+)\s*\/\s*(@?\w+)\s*\]/i))
       unless GM_ACCOUNTS.include?(user_id)
         @mastodon_client.reply(reply_status, "일반 사용자는 [전투/@상대] 형식을 사용하세요.")
         return
       end
-      
-      player1 = $1.gsub('@', '').strip
-      player2 = $2.gsub('@', '').strip
-      @battle_command.start_1v1(player1, player2, reply_status)
+
+      player1 = match[1].gsub('@', '').strip
+      player2 = match[2].gsub('@', '').strip
+      puts "[GM전투] GM #{user_id}가 1:1 전투 개설 시도: #{player1} vs #{player2}"
+      begin
+        @battle_command.start_1v1(player1, player2, reply_status)
+        puts "[GM전투] 전투 개설 완료"
+      rescue => e
+        puts "[GM전투] 전투 개설 실패: #{e.message}"
+        puts e.backtrace.first(10).join("\n")
+        raise e
+      end
+      return
+    end
+
+    # 1:1 전투 개시 - [전투/@상대]
+    if (match = text.match(/\[전투\s*\/\s*(@?\w+)\s*\]/i))
+      target = match[1].gsub('@', '').strip
+
+      if GM_ACCOUNTS.include?(user_id)
+        @mastodon_client.reply(reply_status, "GM은 [전투/@A/@B] 형식으로 두 플레이어를 지정해야 합니다.")
+        return
+      end
+
+      @battle_command.start_1v1(user_id, target, reply_status)
       return
     end
 
     # 2:2 전투 개시 - [팀전투/@A/@B/@C/@D]
-    if text =~ /\[팀전투((?:\/@?\w+){4})\]/i
+    if text =~ /\[팀전투((?:\s*\/\s*@?\w+){4})\s*\]/i
       participants_text = $1
       participants = participants_text.split('/').map { |p| p.gsub('@', '').strip }.reject(&:empty?)
       
@@ -133,7 +148,7 @@ class CommandParser
     end
 
     # 4:4 전투 개시 - [대규모전투/@A/@B/@C/@D/@E/@F/@G/@H]
-    if text =~ /\[대규모전투((?:\/@?\w+){8})\]/i
+    if text =~ /\[대규모전투((?:\s*\/\s*@?\w+){8})\s*\]/i
       participants_text = $1
       participants = participants_text.split('/').map { |p| p.gsub('@', '').strip }.reject(&:empty?)
       
@@ -153,14 +168,14 @@ class CommandParser
     end
 
     # 전투 중 공격 - [공격] 또는 [공격/@타겟]
-    if text =~ /\[공격(?:\/(@?\w+))?\]/i
+    if text =~ /\[공격(?:\s*\/\s*(@?\w+))?\s*\]/i
       target = $1 ? $1.gsub('@', '').strip : nil
       @battle_command.attack(user_id, target, reply_status)
       return
     end
 
     # 전투 중 방어 - [방어] 또는 [방어/@타겟]
-    if text =~ /\[방어(?:\/(@?\w+))?\]/i
+    if text =~ /\[방어(?:\s*\/\s*(@?\w+))?\s*\]/i
       target = $1 ? $1.gsub('@', '').strip : nil
       @battle_command.defend(user_id, target, reply_status)
       return
@@ -173,7 +188,7 @@ class CommandParser
     end
 
     # 전투 중 물약 사용 - [물약사용/크기] 또는 [물약사용/크기/@타겟]
-    if text =~ /\[물약사용\/(소형|중형|대형)(?:\/(@?\w+))?\]/i
+    if text =~ /\[물약사용\s*\/\s*(소형|중형|대형)(?:\s*\/\s*(@?\w+))?\s*\]/i
       potion_type = $1
       target = $2 ? $2.gsub('@', '').strip : nil
       

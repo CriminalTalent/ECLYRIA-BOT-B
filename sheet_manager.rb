@@ -4,17 +4,21 @@ require 'googleauth'
 require 'json'
 
 class SheetManager
-  def initialize
-    @spreadsheet_id = ENV['GOOGLE_SHEET_ID']
-    @credentials_path = ENV['GOOGLE_CREDENTIALS_PATH'] || 'credentials.json'
-    
+  CACHE_TTL = 60  # 캐시 유효 시간 (초) - 할당량 초과 방지
+
+  def initialize(spreadsheet_id = nil, credentials_path = nil)
+    @spreadsheet_id = spreadsheet_id || ENV['GOOGLE_SHEET_ID']
+    @credentials_path = credentials_path || ENV['GOOGLE_CREDENTIALS_PATH'] || 'credentials.json'
+
     # Google Sheets API 초기화
     @sheets_service = Google::Apis::SheetsV4::SheetsService.new
     @sheets_service.authorization = authorize
-    
+
     @mutex = Mutex.new
-    
-    puts "[SheetManager] 초기화 완료"
+    @cache = {}
+    @cache_time = {}
+
+    puts "[SheetManager] 초기화 완료 (캐시 TTL: #{CACHE_TTL}초)"
   end
 
   private
@@ -31,27 +35,69 @@ class SheetManager
 
   public
 
-  # 사용자 검색 (ID로 검색, 스탯 + 사용자 시트 통합)
+  # validation
+  def cache_valid?(key)
+    return false unless @cache_time[key]
+    Time.now - @cache_time[key] < CACHE_TTL
+  end
+
+  # update cache (with retry on quota error)
+  def refresh_cache(retry_count = 0)
+    begin
+      stats_range = "'스탯'!A2:H1000"
+      stats_response = @sheets_service.get_spreadsheet_values(@spreadsheet_id, stats_range)
+
+      user_range = "'사용자'!A2:D1000"
+      user_response = @sheets_service.get_spreadsheet_values(@spreadsheet_id, user_range)
+
+      @mutex.synchronize do
+        @cache[:stats] = stats_response.values || []
+        @cache_time[:stats] = Time.now
+        @cache[:users] = user_response.values || []
+        @cache_time[:users] = Time.now
+      end
+
+      puts "[SheetManager] 캐시 갱신 완료"
+      true
+    rescue Google::Apis::RateLimitError, Google::Apis::ClientError => e
+      if e.message.include?("RESOURCE_EXHAUSTED") && retry_count < 3
+        wait_time = (retry_count + 1) * 20  # 20초, 40초, 60초
+        puts "[SheetManager] 할당량 초과, #{wait_time}초 후 재시도 (#{retry_count + 1}/3)"
+        sleep wait_time
+        return refresh_cache(retry_count + 1)
+      end
+      puts "[SheetManager] 캐시 갱신 실패: #{e.message}"
+      false
+    rescue => e
+      puts "[SheetManager] 캐시 갱신 오류: #{e.message}"
+      false
+    end
+  end
+
+  # 캐시 무효화 (업데이트 후 호출)
+  def invalidate_cache
+    @cache_time[:stats] = nil
+    @cache_time[:users] = nil
+  end
+
+  # 사용자 검색 (ID로 검색, 스탯 + 사용자 시트 통합) - 캐시 사용
   def find_user(user_id)
+    # 캐시가 없거나 만료되었으면 갱신
+    unless cache_valid?(:stats) && cache_valid?(:users)
+      refresh_cache
+    end
+
     @mutex.synchronize do
       begin
-        # 스탯 시트에서 기본 정보
-        stats_range = "'스탯'!A2:H1000"
-        stats_response = @sheets_service.get_spreadsheet_values(@spreadsheet_id, stats_range)
-        stats_values = stats_response.values
-        
+        stats_values = @cache[:stats]
         return nil unless stats_values
-        
+
         stats_row = stats_values.find { |row| row[0] == user_id }
         return nil unless stats_row
-        
-        # 사용자 시트에서 아이템 정보
-        user_range = "'사용자'!A2:D1000"
-        user_response = @sheets_service.get_spreadsheet_values(@spreadsheet_id, user_range)
-        user_values = user_response.values
-        
+
+        user_values = @cache[:users]
         user_row = user_values&.find { |row| row[0] == user_id }
-        
+
         return {
           "ID" => stats_row[0],                         # A열: ID
           "이름" => stats_row[1] || user_id,            # B열: 이름
@@ -165,6 +211,9 @@ class SheetManager
           end
         end
         
+        # if update successful, invalidate cache
+        invalidate_cache if success
+
         success
       rescue => e
         puts "[SheetManager] 사용자 업데이트 오류: #{e.message}"
@@ -304,9 +353,13 @@ class SheetManager
           )
           
           puts "[SheetManager] 배치 업데이트 완료: #{updates_hash.keys.join(', ')}"
+
+          # if update successful, invalidate cache
+          invalidate_cache
+
           return true
         end
-        
+
         false
       rescue => e
         puts "[SheetManager] 배치 업데이트 오류: #{e.message}"

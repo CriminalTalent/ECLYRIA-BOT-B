@@ -388,7 +388,7 @@ class CoordinateExplorationCommand
     # [아이템:아이템명] 파싱
     result_text.scan(/\[아이템:([^\]]+)\]/) do |item_name|
       item_name = item_name[0].strip
-      @sheet_manager.update_user(user_id, items: [item_name])
+      @sheet_manager.update_user(user_id, { "아이템" => item_name })
       rewards << "아이템: #{item_name}"
     end
 
@@ -398,7 +398,7 @@ class CoordinateExplorationCommand
       player = @sheet_manager.find_user(user_id)
       current_galleons = player["갈레온"].to_i
       new_galleons = current_galleons + amount
-      @sheet_manager.update_user_items(user_id, galleons: new_galleons)
+      @sheet_manager.update_user(user_id, { "갈레온" => new_galleons })
       rewards << "갈레온: +#{amount}G (총 #{new_galleons}G)"
     end
 

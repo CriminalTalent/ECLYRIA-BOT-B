@@ -55,7 +55,7 @@ end
 # ---------------------------------
 # Mastodon 연결 + 계정 확인
 # ---------------------------------
-mastodon = MastodonClient.new(base_url: BASE_URL, token: TOKEN)
+mastodon = MastodonClient.new(BASE_URL, TOKEN)
 
 begin
   acct = mastodon.verify_credentials
@@ -69,7 +69,7 @@ end
 # 엔진 / 파서
 # ---------------------------------
 battle_engine = BattleEngine.new(mastodon, sheet_manager)
-parser = CommandParser.new(mastodon, battle_engine)
+parser = CommandParser.new(mastodon, sheet_manager)
 puts "[파서] 초기화 완료"
 puts "멘션 스트리밍 시작..."
 
@@ -96,7 +96,11 @@ loop do
 
         mention_id = status[:id]
         next if mention_id.nil?
-        next if processed.include?(mention_id)
+
+        if processed.include?(mention_id)
+          puts "[중복감지] 이미 처리된 mention_id: #{mention_id}"
+          next
+        end
 
         created_at = status[:created_at]
         if created_at
@@ -106,10 +110,10 @@ loop do
 
         processed.add(mention_id)
 
-        sender = status.dig(:account, :acct) || "unknown"
+        sender = (status.dig(:account, :acct) || "unknown").to_s.strip
         puts "[스트리밍] #{mention_id} - @#{sender}"
 
-        parser.parse(status)
+        parser.handle(status)
 
       rescue => e
         puts "[에러] 멘션 처리 오류: #{e.class}: #{e.message}"
